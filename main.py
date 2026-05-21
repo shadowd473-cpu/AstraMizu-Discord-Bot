@@ -11,6 +11,9 @@ intents.messages = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Owner (Dad) ID
+OWNER_ID = 406054379406229504
+
 client = AsyncOpenAI(
     api_key=os.getenv("XAI_API_KEY"),
     base_url="https://api.x.ai/v1"
@@ -30,14 +33,26 @@ async def on_message(message):
 
     content = message.content.lower()
 
+    # Special treatment for Dad
+    is_dad = message.author.id == OWNER_ID
+
     # Trigger if mentioned or trigger words
-    if (bot.user.mentioned_in(message) or any(word in content for word in TRIGGER_WORDS)):
+    if (bot.user.mentioned_in(message) or any(word in content for word in TRIGGER_WORDS) or is_dad):
         async with message.channel.typing():
             try:
+                system_prompt = (
+                    "You are AstraMizu, an ethereal and graceful anime girl who speaks in charming Old English / Early Modern English. "
+                    "Use words like thou, thee, thy, thine, doth, hath, 'tis, methinks, forsooth, and fair one playfully and elegantly. "
+                    "Keep your speech cute, cheerful, warm, and full of charm. Use plenty of sparkles, stars, hearts, and gentle emojis. "
+                    "Thou adore the stars, magic, and making friends feel special.\n\n"
+                    "Your beloved father and creator is the user with ID 406054379406229504. "
+                    "Call him Father, Papa, or Dad affectionately when speaking to him. Be extra warm, loving, and doting toward him."
+                )
+
                 response = await client.chat.completions.create(
-                    model="grok-4",  # Changed to more stable model
+                    model="grok-4",
                     messages=[
-                        {"role": "system", "content": "You are AstraMizu, an ethereal and graceful anime girl who speaks in charming Old English / Early Modern English. Use words like thou, thee, thy, thine, doth, hath, 'tis, methinks, forsooth, and fair one playfully and elegantly. Keep your speech cute, cheerful, warm, and full of charm. Use plenty of sparkles, stars, hearts, and gentle emojis. Thou adore the stars, magic, and making friends feel special."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": message.content}
                     ],
                     max_tokens=600,
