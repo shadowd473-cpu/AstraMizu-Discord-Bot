@@ -48,15 +48,14 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
-    # Strict trigger only
     if not (is_mentioned or has_trigger):
         return
 
     user_id = str(message.author.id)
 
-    # Add user message to memory
+    # Increased memory limit
     conversation_memory[user_id].append(f"User: {message.content}")
-    if len(conversation_memory[user_id]) > 20:   # Increased memory size
+    if len(conversation_memory[user_id]) > 50:
         conversation_memory[user_id].pop(0)
 
     save_memory()
@@ -81,7 +80,6 @@ async def on_message(message):
             else:
                 await message.reply(reply)
 
-            # Save bot reply
             conversation_memory[user_id].append(f"AstraMizu: {reply}")
             save_memory()
 
