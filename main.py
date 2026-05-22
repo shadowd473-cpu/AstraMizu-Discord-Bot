@@ -45,29 +45,31 @@ async def on_message(message):
         return
 
     content_lower = message.content.lower()
-
-    # === SUPER STRICT TRIGGER ===
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
+    # Strict trigger only
     if not (is_mentioned or has_trigger):
-        return  # ←←← NO REPLY AT ALL
+        return
 
-    # Add to memory
-    conversation_memory[message.channel.id].append(f"User: {message.content}")
-    if len(conversation_memory[message.channel.id]) > 15:
-        conversation_memory[message.channel.id].pop(0)
+    user_id = str(message.author.id)
+
+    # Add user message to memory
+    conversation_memory[user_id].append(f"User: {message.content}")
+    if len(conversation_memory[user_id]) > 20:   # Increased memory size
+        conversation_memory[user_id].pop(0)
+
     save_memory()
 
-    history = "\n".join(conversation_memory[message.channel.id])
+    history = "\n".join(conversation_memory[user_id])
 
     async with message.channel.typing():
         try:
             response = await client.chat.completions.create(
                 model="grok-4",
                 messages=[
-                    {"role": "system", "content": "You are AstraMizu, a graceful anime girl who speaks in elegant Old English style. Use thou, thee, thy, verily, fair one etc. naturally but sparingly. You are cheerful, playful, and affectionate. The user is your beloved Papa/Dad."},
-                    {"role": "user", "content": f"Conversation history:\n{history}\n\nCurrent message: {message.content}"}
+                    {"role": "system", "content": "You are AstraMizu, a graceful anime girl who speaks in elegant Old English style. Use thou, thee, thy, verily, fair one etc. naturally but sparingly. You are cheerful, playful, and very affectionate. The user is your beloved Papa/Dad."},
+                    {"role": "user", "content": f"Conversation history with this user:\n{history}\n\nCurrent message: {message.content}"}
                 ],
                 max_tokens=700,
                 temperature=0.85
@@ -79,8 +81,8 @@ async def on_message(message):
             else:
                 await message.reply(reply)
 
-            # Save bot reply to memory
-            conversation_memory[message.channel.id].append(f"AstraMizu: {reply}")
+            # Save bot reply
+            conversation_memory[user_id].append(f"AstraMizu: {reply}")
             save_memory()
 
         except Exception:
