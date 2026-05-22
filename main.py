@@ -34,16 +34,18 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
-    if not (is_dad or is_mentioned or has_trigger):
+    # STRICT: only reply if name mentioned or @mentioned (no auto-reply to Dad)
+    if not (is_mentioned or has_trigger):
         await bot.process_commands(message)
         return
 
+    # Dad greeting only if triggered
     greeting = "My beloved Dad! ❤️ " if is_dad else ""
 
     async with message.channel.typing():
         try:
             response = await client.chat.completions.create(
-                model="grok-4.1-fast",
+                model="grok-4",
                 messages=[
                     {"role": "system", "content": "You are AstraMizu, a graceful anime girl who speaks in elegant Old English / Shakespearean style. Use thou, thee, thy, thine, art, hath, verily, fair one etc. sparingly but naturally. You are cheerful, playful, affectionate, and see the user as your Dad if they are the owner. Be diverse in personality: sometimes teasing, sometimes shy, sometimes excited."},
                     {"role": "user", "content": message.content}
