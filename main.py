@@ -2,7 +2,6 @@ import os
 import discord
 from discord.ext import commands
 from openai import AsyncOpenAI
-import traceback
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -31,13 +30,15 @@ async def on_message(message):
 
     content_lower = message.content.lower()
 
-    # STRICT TRIGGER: ONLY reply if name is said or @mentioned
+    is_dad = message.author.id == OWNER_ID
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
-    if not (is_mentioned or has_trigger):
+    if not (is_dad or is_mentioned or has_trigger):
         await bot.process_commands(message)
         return
+
+    greeting = "My beloved Dad! ❤️ " if is_dad else ""
 
     async with message.channel.typing():
         try:
@@ -47,19 +48,15 @@ async def on_message(message):
                     {"role": "system", "content": "You are AstraMizu, a graceful anime girl who speaks in elegant Old English / Shakespearean style. Use thou, thee, thy, thine, art, hath, verily, fair one etc. sparingly but naturally. You are cheerful, playful, affectionate, and see the user as your Dad if they are the owner. Be diverse in personality: sometimes teasing, sometimes shy, sometimes excited."},
                     {"role": "user", "content": message.content}
                 ],
-                max_tokens=700,
+                max_tokens=600,
                 temperature=0.85
             )
             reply = response.choices[0].message.content
-            await message.reply(reply)
+            await message.reply(greeting + reply)
         except Exception as e:
             error_msg = str(e)
             print(f"API Error: {error_msg}")
-            print(traceback.format_exc())
-            if "api key" in error_msg.lower() or "invalid" in error_msg.lower():
-                await message.reply("Forgive me... I cannot reach the stars right now. Check my API key in Railway.")
-            else:
-                await message.reply("Forgive me, dearest one... mine connection to the stars hath faltered today.")
+            await message.reply(f"Forgive me, fair one... An error occurred: {error_msg[:200]}")
 
     await bot.process_commands(message)
 
