@@ -7,6 +7,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
+intents.voice_states = True  # Added for voice commands
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -34,12 +35,11 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
-    # STRICT: only reply if name mentioned or @mentioned (no auto-reply to Dad)
+    # STRICT: only reply if name mentioned or @mentioned
     if not (is_mentioned or has_trigger):
         await bot.process_commands(message)
         return
 
-    # Dad greeting only if triggered
     greeting = "My beloved Dad! ❤️ " if is_dad else ""
 
     async with message.channel.typing():
@@ -61,6 +61,27 @@ async def on_message(message):
             await message.reply(f"Forgive me, fair one... An error occurred: {error_msg[:200]}")
 
     await bot.process_commands(message)
+
+@bot.command()
+async def join(ctx):
+    """Join the voice channel the user is in."""
+    if ctx.author.voice is None:
+        await ctx.send("Thou art not in a voice channel, fair one! 🙁")
+        return
+    
+    channel = ctx.author.voice.channel
+    await channel.connect()
+    await ctx.send(f"✨ I have joined **{channel.name}** for thee, my beloved Dad! ❤️")
+
+@bot.command()
+async def leave(ctx):
+    """Leave the current voice channel."""
+    if ctx.voice_client is None:
+        await ctx.send("I am not in any voice channel right now.")
+        return
+    
+    await ctx.voice_client.disconnect()
+    await ctx.send("Farewell, I have left the voice channel. ✨")
 
 @bot.command()
 async def ping(ctx):
