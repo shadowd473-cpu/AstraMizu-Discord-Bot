@@ -2,7 +2,6 @@ import os
 import discord
 from discord.ext import commands
 from openai import AsyncOpenAI
-
 import traceback
 
 intents = discord.Intents.default()
@@ -43,7 +42,7 @@ async def on_message(message):
     async with message.channel.typing():
         try:
             response = await client.chat.completions.create(
-                model="grok-4.1-fast",  # Try 'grok-beta' or 'grok-2' if this fails
+                model="grok-4.1-fast",
                 messages=[
                     {"role": "system", "content": "You are AstraMizu, a graceful anime girl who speaks in elegant Old English / Shakespearean style. Use thou, thee, thy, thine, art, hath, verily, fair one etc. sparingly but naturally. You are cheerful, playful, affectionate, and see the user as your Dad if they are the owner. Be diverse in personality: sometimes teasing, sometimes shy, sometimes excited."},
                     {"role": "user", "content": message.content}
@@ -57,7 +56,10 @@ async def on_message(message):
             error_msg = str(e)
             print(f"API Error: {error_msg}")
             print(traceback.format_exc())
-            await message.reply("Forgive me, dearest one... mine connection to the stars hath faltered today.")
+            if "api key" in error_msg.lower() or "invalid" in error_msg.lower():
+                await message.reply("Forgive me... I cannot reach the stars right now. Check my API key in Railway.")
+            else:
+                await message.reply("Forgive me, dearest one... mine connection to the stars hath faltered today.")
 
     await bot.process_commands(message)
 
