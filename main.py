@@ -2,6 +2,8 @@ import os
 import discord
 from discord.ext import commands
 from openai import AsyncOpenAI
+import chromadb
+from chromadb.utils import embedding_functions
 import json
 from collections import defaultdict
 
@@ -20,24 +22,14 @@ client = AsyncOpenAI(
 OWNER_ID = 406054379406229504
 TRIGGER_WORDS = ["astra", "mizu", "astramizu"]
 
-MEMORY_FILE = "memory.json"
-
-def load_memory():
-    try:
-        with open(MEMORY_FILE, "r") as f:
-            return defaultdict(list, json.load(f))
-    except:
-        return defaultdict(list)
-
-def save_memory():
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(dict(conversation_memory), f)
-
-conversation_memory = load_memory()
+# Vector Database Setup
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+collection = chroma_client.get_or_create_collection(name="astra_memory", embedding_function=embedding_function)
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user}")
+    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready")
 
 @bot.event
 async def on_message(message):
@@ -53,14 +45,21 @@ async def on_message(message):
 
     user_id = str(message.author.id)
 
-    # Increased memory limit
-    conversation_memory[user_id].append(f"User: {message.content}")
-    if len(conversation_memory[user_id]) > 50:
-        conversation_memory[user_id].pop(0)
+    # Store message in vector DB
+    collection.add(
+        documents=[message.content],
+        metadatas=[{"user_id": user_id, "timestamp": str(message.created_at)}],
+        ids=[f"{user_id}_{message.id}"]
+    )
 
-    save_memory()
+    # Retrieve relevant past memories
+    results = collection.query(
+        query_texts=[message.content],
+        n_results=8,
+        where={"user_id": user_id}
+    )
 
-    history = "\n".join(conversation_memory[user_id])
+    history = "\n".join(results["documents"][0]) if results["documents"] else ""
 
     async with message.channel.typing():
         try:
@@ -68,7 +67,7 @@ async def on_message(message):
                 model="grok-4",
                 messages=[
                     {"role": "system", "content": "You are AstraMizu, a graceful anime girl who speaks in elegant Old English style. Use thou, thee, thy, verily, fair one etc. naturally but sparingly. You are cheerful, playful, and very affectionate. The user is your beloved Papa/Dad."},
-                    {"role": "user", "content": f"Conversation history with this user:\n{history}\n\nCurrent message: {message.content}"}
+                    {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
                 max_tokens=700,
                 temperature=0.85
@@ -79,9 +78,6 @@ async def on_message(message):
                 await message.reply(f"My beloved Papa! ❤️ {reply}")
             else:
                 await message.reply(reply)
-
-            conversation_memory[user_id].append(f"AstraMizu: {reply}")
-            save_memory()
 
         except Exception:
             await message.reply("Forgive me... the stars are tangled today.")
