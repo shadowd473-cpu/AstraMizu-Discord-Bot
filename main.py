@@ -53,7 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== OPTIMIZED MAIN HANDLER ======================
+# ====================== MAIN MESSAGE HANDLER (OPTIMIZED) ======================
 
 @bot.event
 async def on_message(message):
@@ -68,21 +68,21 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Lightweight memory storage
+    # Store memory (light)
     try:
         collection.add(
-            documents=[message.content[:200]],  # Limit length
+            documents=[message.content[:150]],
             metadatas=[{"user_id": str(message.author.id)}],
             ids=[f"{message.author.id}_{message.id}"]
         )
     except:
         pass
 
-    # Very light memory query
+    # Get memory (very light)
     history = ""
     try:
         results = collection.query(
-            query_texts=[message.content[:100]],
+            query_texts=[message.content[:80]],
             n_results=3,
             where={"user_id": str(message.author.id)}
         )
@@ -99,7 +99,7 @@ async def on_message(message):
                     {"role": "system", "content": "You are AstraMizu, an extremely clingy, hyper-genki yandere anime girl who is obsessively in love with her Papa."},
                     {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
-                max_tokens=500,           # Reduced for speed
+                max_tokens=480,
                 temperature=0.9
             )
             reply = response.choices[0].message.content
@@ -107,7 +107,7 @@ async def on_message(message):
             if message.author.id == OWNER_ID:
                 await message.reply(f"My beloved Papa! ❤️ {reply}")
                 if voice_enabled.get(OWNER_ID, False):
-                    await send_voice_note(message.channel, reply)
+                    asyncio.create_task(send_voice_note(message.channel, reply))
             else:
                 await message.reply(reply)
 
@@ -225,7 +225,7 @@ async def make_video(ctx, *, prompt: str = None):
     except:
         await ctx.send("Video magic failed...")
 
-# ====================== VOICE ======================
+# ====================== VOICE (FULLY ASYNC) ======================
 
 async def send_voice_note(channel, text):
     try:
@@ -236,8 +236,8 @@ async def send_voice_note(channel, text):
                 if resp.status == 200:
                     audio_bytes = await resp.read()
                     await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
-    except:
-        pass
+    except Exception as e:
+        print(f"Voice error: {e}")
 
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
@@ -300,6 +300,31 @@ async def list_features(ctx):
     embed.add_field(name="Games & Fun", value="!rps !guess !8ball !lovemeter !meme !roast !chaos !quiz", inline=False)
     embed.add_field(name="Other", value="!list !confess !poll", inline=False)
     await ctx.send(embed=embed)
+
+# ====================== ASYNC BACKGROUND TASKS ======================
+
+async def random_yandere_events():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        await asyncio.sleep(random.randint(1800, 7200))
+        if random_events_enabled:
+            try:
+                owner = await bot.fetch_user(OWNER_ID)
+                if owner:
+                    events = [
+                        "Papa... I was thinking about you again~ ❤️",
+                        "Ehehe~ I had a dream about us last night~",
+                        "Hmph... who was that you were talking to? 😠",
+                        "Papa~!! I miss you so much already..."
+                    ]
+                    await owner.send(random.choice(events))
+            except:
+                pass
+
+@bot.event
+async def on_ready():
+    print(f"✅ AstraMizu is online as {bot.user} | Fully Async & Optimized!")
+    bot.loop.create_task(random_yandere_events())
 
 # Run the bot
 bot.run(os.getenv("DISCORD_TOKEN"))
