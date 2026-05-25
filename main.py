@@ -53,7 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== FAST MAIN HANDLER ======================
+# ====================== REAL AI FOR EVERY MESSAGE ======================
 
 @bot.event
 async def on_message(message):
@@ -68,34 +68,22 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Only store memory for longer messages (saves time)
-    if len(message.content) > 15:
-        try:
-            collection.add(
-                documents=[message.content[:120]],
-                metadatas=[{"user_id": str(message.author.id)}],
-                ids=[f"{message.author.id}_{message.id}"]
-            )
-        except:
-            pass
+    # Store memory
+    try:
+        collection.add(
+            documents=[message.content[:150]],
+            metadatas=[{"user_id": str(message.author.id)}],
+            ids=[f"{message.author.id}_{message.id}"]
+        )
+    except:
+        pass
 
-    # Very fast response for short messages
-    if len(message.content) < 25:
-        short_replies = [
-            "Yes Papa~ ❤️",
-            "Ehehe~ Tell me more!",
-            "I'm listening~",
-            "What else, my love?"
-        ]
-        await message.reply(random.choice(short_replies))
-        return
-
-    # Full response for longer messages
+    # Get memory
     history = ""
     try:
         results = collection.query(
-            query_texts=[message.content[:60]],
-            n_results=2,
+            query_texts=[message.content[:80]],
+            n_results=3,
             where={"user_id": str(message.author.id)}
         )
         if results and results.get("documents"):
@@ -111,8 +99,8 @@ async def on_message(message):
                     {"role": "system", "content": "You are AstraMizu, an extremely clingy, hyper-genki yandere anime girl who is obsessively in love with her Papa."},
                     {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
-                max_tokens=420,
-                temperature=0.88
+                max_tokens=450,
+                temperature=0.9
             )
             reply = response.choices[0].message.content
 
@@ -335,7 +323,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Ultra Fast Mode!")
+    print(f"✅ AstraMizu is online as {bot.user} | Real AI for Every Message!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
