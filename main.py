@@ -109,8 +109,8 @@ async def send_voice_note(channel, text):
         }
         payload = {
             "text": text,
-            "voice": "eve",  # Feminine, expressive voice perfect for AstraMizu
-            "format": "mp3"
+            "voice_id": "eve",
+            "language": "en"
         }
 
         async with aiohttp.ClientSession() as session:
@@ -121,16 +121,18 @@ async def send_voice_note(channel, text):
                 timeout=aiohttp.ClientTimeout(total=60)
             ) as resp:
                 if resp.status != 200:
-                    print(f"TTS failed: {await resp.text()}")
+                    error = await resp.text()
+                    print(f"TTS API error {resp.status}: {error}")
+                    await channel.send("Forgive me Papa... my voice is a bit hoarse today.")
                     return
                 audio_bytes = await resp.read()
 
-        # Send as voice note (Discord will show it as audio message)
+        # Send as voice note
         audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = "astramizu_voice.mp3"
         await channel.send(file=discord.File(audio_file, filename="astramizu_voice.mp3"))
     except Exception as e:
         print(f"Voice note error: {e}")
+        await channel.send("Alas... I tried to speak but the stars silenced me.")
 
 
 # ====================== FUN GAMES ======================
