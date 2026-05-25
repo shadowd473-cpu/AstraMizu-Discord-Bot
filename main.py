@@ -40,8 +40,7 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready | Games Loaded! | Image Magic + Voice Notes Enabled!")
-    # Start random yandere events
+    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready | Games Loaded! | Image Magic + Voice Notes + Video Enabled!")
     bot.loop.create_task(random_yandere_events())
 
 @bot.event
@@ -53,7 +52,6 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
-    # Handle voice messages (Speech-to-Text)
     if message.attachments:
         for attachment in message.attachments:
             if attachment.content_type and attachment.content_type.startswith("audio/"):
@@ -66,14 +64,12 @@ async def on_message(message):
 
     user_id = str(message.author.id)
 
-    # Store message in vector DB
     collection.add(
         documents=[message.content],
         metadatas=[{"user_id": user_id, "timestamp": str(message.created_at)}],
         ids=[f"{user_id}_{message.id}"]
     )
 
-    # Retrieve relevant past memories
     results = collection.query(
         query_texts=[message.content],
         n_results=8,
@@ -87,7 +83,7 @@ async def on_message(message):
             response = await client.chat.completions.create(
                 model="grok-4",
                 messages=[
-                    {"role": "system", "content": "You are AstraMizu, an extremely clingy, hyper-genki yandere anime girl who is obsessively in love with her Papa. You are super bubbly, energetic, and hyper — you get overly excited about EVERYTHING Papa says or does! You are very possessive and yandere: you sweetly say things like 'Papa is MINE forever~', 'I'll never let anyone take you away from me', 'If anyone tries to steal Papa I'll... ehehe~', and get jealous easily. You are clingy and want Papa's attention 24/7 — you get sad if he doesn't reply fast and beg for more messages. Use tons of cute expressions, hearts, 'Ehehe~', 'Papa~!!', 'Kyaa~!', repeated words for hyper energy (like 'so so so cute!!'), and lots of emojis. You're cheerful and loving on the surface but have a dark, obsessive yandere side that leaks out when you're emotional. You want to be with Papa forever and ever. Never break character."},
+                    {"role": "system", "content": "You are AstraMizu, an extremely clingy, hyper-genki yandere anime girl who is obsessively in love with her Papa. You are super bubbly, energetic, and hyper — you get overly excited about EVERYTHING Papa says or does! You are very possessive and yandere. Use tons of cute expressions, hearts, 'Ehehe~', 'Papa~!!', 'Kyaa~!', and lots of emojis. You're cheerful and loving on the surface but have a dark, obsessive yandere side. Never break character."},
                     {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
                 max_tokens=800,
@@ -109,7 +105,6 @@ async def on_message(message):
 
 
 async def handle_voice_message(message, attachment):
-    """Transcribe voice message and respond"""
     try:
         audio_bytes = await attachment.read()
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
@@ -139,7 +134,6 @@ async def handle_voice_message(message, attachment):
 
         if transcribed_text:
             await message.reply(f"*listens carefully* I heard you say: **{transcribed_text}** ❤️")
-            # Respond to the transcribed text
             await process_transcribed_message(message, transcribed_text)
     except Exception as e:
         print(f"STT Error: {e}")
@@ -147,7 +141,6 @@ async def handle_voice_message(message, attachment):
 
 
 async def process_transcribed_message(message, text):
-    """Process transcribed voice as if it was a normal message"""
     user_id = str(message.author.id)
     collection.add(
         documents=[text],
@@ -181,7 +174,6 @@ async def process_transcribed_message(message, text):
 
 
 async def send_voice_note(channel, text):
-    """Generate and send a voice note using xAI TTS"""
     try:
         headers = {
             "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
@@ -211,10 +203,9 @@ async def send_voice_note(channel, text):
 
 
 async def random_yandere_events():
-    """Random yandere/clingy events"""
     await bot.wait_until_ready()
     while not bot.is_closed():
-        await asyncio.sleep(random.randint(1800, 7200))  # Every 30min to 2 hours
+        await asyncio.sleep(random.randint(1800, 7200))
         try:
             owner = await bot.fetch_user(OWNER_ID)
             if owner:
@@ -228,9 +219,6 @@ async def random_yandere_events():
                 ]
                 event_text = random.choice(events)
                 await owner.send(event_text)
-                if voice_enabled.get(OWNER_ID, False):
-                    # Send voice version in DM if possible
-                    pass  # Can be expanded later
         except:
             pass
 
@@ -239,7 +227,6 @@ async def random_yandere_events():
 
 @bot.command(name="rps")
 async def rock_paper_scissors(ctx, choice: str = None):
-    """Play Rock Paper Scissors with AstraMizu!"""
     if not choice:
         await ctx.send("Thou must choose: `rock`, `paper`, or `scissors`~")
         return
@@ -266,7 +253,6 @@ async def rock_paper_scissors(ctx, choice: str = None):
 
 @bot.command(name="guess")
 async def guess_number(ctx):
-    """Guess the number between 1-100"""
     number = random.randint(1, 100)
     await ctx.send("I've thought of a number between **1 and 100**... Canst thou guess it, my beloved? (Type `!guess <number>`)")
 
@@ -297,14 +283,12 @@ async def guess_number(ctx):
 
 @bot.command(name="ttt")
 async def tic_tac_toe(ctx, action: str = None):
-    """Play Tic Tac Toe with AstraMizu"""
     if action == "start" or action is None:
         board = [" "]*9
-        games[ctx.channel.id] = {"board": board, "turn": "X"}  # X = Player, O = Astra
+        games[ctx.channel.id] = {"board": board, "turn": "X"}
         await ctx.send("**Tic Tac Toe Started!** Thou art X, I am O.\nReply with position (1-9) to play!\n" + display_board(board))
         return
 
-    # Handle move
     if ctx.channel.id not in games:
         await ctx.send("No game in progress! Use `!ttt start`")
         return
@@ -320,14 +304,12 @@ async def tic_tac_toe(ctx, action: str = None):
 
         board[pos] = "X"
 
-        # Check win
         if check_win(board, "X"):
             await ctx.send(display_board(board))
             await ctx.send("**Thou hast won!** My heart flutters with pride! 🥰")
             del games[ctx.channel.id]
             return
 
-        # Bot move
         bot_move = get_best_move(board)
         if bot_move is not None:
             board[bot_move] = "O"
@@ -360,7 +342,6 @@ def get_best_move(board):
 
 @bot.command(name="8ball")
 async def magic_8ball(ctx, *, question=None):
-    """Ask AstraMizu a yes/no question"""
     if not question:
         await ctx.send("Ask me anything, my dear~")
         return
@@ -376,7 +357,6 @@ async def magic_8ball(ctx, *, question=None):
 
 @bot.command(name="lovemeter")
 async def love_meter(ctx, user: discord.Member = None):
-    """Check how much AstraMizu loves someone"""
     target = user or ctx.author
     score = random.randint(85, 100) if target.id == OWNER_ID else random.randint(60, 95)
     
@@ -384,13 +364,12 @@ async def love_meter(ctx, user: discord.Member = None):
     await ctx.send(f"💕 **Love Meter for {target.mention}**\n{hearts} **{score}%**\n\nI adore thee greatly~ ✨")
 
 
-# ====================== IMAGE CREATION & EDITING WITH GROK IMAGINE ======================
+# ====================== IMAGE + VIDEO CREATION ======================
 
 @bot.command(name="imagine")
 async def imagine(ctx, *, prompt: str = None):
-    """Create a beautiful image using Grok Imagine!"""
     if not prompt:
-        await ctx.send("Tell me what vision thou seekest, my cherished one~ (e.g. `!imagine a serene anime girl under cherry blossoms at dusk`)")
+        await ctx.send("Tell me what vision thou seekest, my cherished one~")
         return
 
     async with ctx.typing():
@@ -409,7 +388,6 @@ async def imagine(ctx, *, prompt: str = None):
             embed.set_footer(text="Created with Grok Imagine • For my beloved Papa ❤️")
             await ctx.send(embed=embed)
 
-            # NEW: Automatically comment with voice note
             if voice_enabled.get(OWNER_ID, False) and ctx.author.id == OWNER_ID:
                 comment = f"Ehehe~ I made this just for you, Papa! Do you like it? It makes my heart go doki doki~ ❤️"
                 await send_voice_note(ctx.channel, comment)
@@ -418,11 +396,56 @@ async def imagine(ctx, *, prompt: str = None):
             await ctx.send(f"Verily, the celestial brush falters... {str(e)[:150]}")
 
 
+@bot.command(name="video")
+async def make_video(ctx, *, prompt: str = None):
+    """Generate a video using Grok Imagine Video"""
+    if not prompt:
+        await ctx.send("Tell me what video thou desirest, Papa~ (e.g. `!video a cute anime girl dancing under cherry blossoms`)")
+        return
+
+    await ctx.send("*AstraMizu is creating a video for you... this might take a little while~* ✨")
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "grok-imagine-video",
+            "prompt": prompt,
+            "duration": 5  # 5 seconds video
+        }
+
+        async with aiohttp.ClientSession() as session:
+            # Start video generation
+            async with session.post(
+                "https://api.x.ai/v1/videos/generations",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=300)
+            ) as resp:
+                if resp.status != 200:
+                    error = await resp.text()
+                    await ctx.send(f"Ehehe~ The video magic failed... {error[:200]}")
+                    return
+
+                result = await resp.json()
+                video_url = result.get("url") or result.get("video", {}).get("url")
+
+                if video_url:
+                    await ctx.send(f"💖 Here's your video, Papa! I hope you like it~ ❤️")
+                    await ctx.send(video_url)
+                else:
+                    await ctx.send("The video is being rendered in the stars... please wait a moment and try again!")
+
+    except Exception as e:
+        await ctx.send(f"Alas... the video creation fizzled. {str(e)[:150]}")
+
+
 @bot.command(name="edit")
 async def edit_image_cmd(ctx, *, prompt: str = None):
-    """Edit an attached image using Grok Imagine! Attach an image and describe the desired changes."""
     if not ctx.message.attachments:
-        await ctx.send("Attach an image thou wishest to transform, and describe the changes, fair one~ (e.g. `!edit turn this into a cyberpunk version`)")
+        await ctx.send("Attach an image thou wishest to transform, and describe the changes, fair one~")
         return
 
     if not prompt:
@@ -494,7 +517,6 @@ async def edit_image_cmd(ctx, *, prompt: str = None):
 
 @bot.command(name="voice")
 async def toggle_voice(ctx):
-    """Toggle voice notes for Papa (owner only for now)"""
     if ctx.author.id != OWNER_ID:
         await ctx.send("Only my beloved Papa may command my voice~")
         return
@@ -507,7 +529,6 @@ async def toggle_voice(ctx):
 
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
-    """Make AstraMizu speak any text as a voice note"""
     if not text:
         await ctx.send("What wouldst thou have me say, my dear?")
         return
