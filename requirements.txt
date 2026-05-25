@@ -1,4 +1,5 @@
 discord.py
 openai
+aiohttp
 chromadb
 sentence-transformers
