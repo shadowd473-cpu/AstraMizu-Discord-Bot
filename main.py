@@ -8,6 +8,8 @@ import json
 import random
 import asyncio
 from collections import defaultdict
+import base64
+import aiohttp
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -34,7 +36,7 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready | Games Loaded!")
+    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready | Games Loaded! | Image Magic Enabled!")
 
 @bot.event
 async def on_message(message):
@@ -238,6 +240,106 @@ async def love_meter(ctx, user: discord.Member = None):
     
     hearts = "❤️" * (score // 10)
     await ctx.send(f"💕 **Love Meter for {target.mention}**\n{hearts} **{score}%**\n\nI adore thee greatly~ ✨")
+
+
+# ====================== IMAGE CREATION & EDITING WITH GROK IMAGINE ======================
+
+@bot.command(name="imagine")
+async def imagine(ctx, *, prompt: str = None):
+    """Create a beautiful image using Grok Imagine!"""
+    if not prompt:
+        await ctx.send("Tell me what vision thou seekest, my cherished one~ (e.g. `!imagine a serene anime girl under cherry blossoms at dusk`)")
+        return
+
+    async with ctx.typing():
+        try:
+            response = await client.images.generate(
+                model="grok-imagine-image-quality",
+                prompt=prompt
+            )
+            image_url = response.data[0].url
+            embed = discord.Embed(
+                title="🌸 AstraMizu's Vision",
+                description=f"*{prompt}*",
+                color=discord.Color.pink()
+            )
+            embed.set_image(url=image_url)
+            embed.set_footer(text="Created with Grok Imagine • For my beloved Papa ❤️")
+            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"Verily, the celestial brush falters... {str(e)[:150]}")
+
+
+@bot.command(name="edit")
+async def edit_image_cmd(ctx, *, prompt: str = None):
+    """Edit an attached image using Grok Imagine! Attach an image and describe the desired changes."""
+    if not ctx.message.attachments:
+        await ctx.send("Attach an image thou wishest to transform, and describe the changes, fair one~ (e.g. `!edit turn this into a cyberpunk version`)")
+        return
+
+    if not prompt:
+        await ctx.send("What enchantment shall I cast upon this image, my dear?")
+        return
+
+    attachment = ctx.message.attachments[0]
+    if not attachment.content_type or not attachment.content_type.startswith("image/"):
+        await ctx.send("That attachment is not a valid image, my dear!")
+        return
+
+    async with ctx.typing():
+        try:
+            image_bytes = await attachment.read()
+            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            data_uri = f"data:{attachment.content_type};base64,{image_b64}"
+
+            headers = {
+                "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "grok-imagine-image-quality",
+                "prompt": prompt,
+                "image": {
+                    "url": data_uri,
+                    "type": "image_url"
+                }
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.x.ai/v1/images/edits",
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        await ctx.send(f"The stars whisper of failure in editing... {error_text[:200]}")
+                        return
+
+                    result = await resp.json()
+                    if "url" in result:
+                        edited_url = result["url"]
+                    elif "data" in result and len(result.get("data", [])) > 0:
+                        edited_url = result["data"][0].get("url", "")
+                    else:
+                        edited_url = None
+
+                    if not edited_url:
+                        await ctx.send("The edit succeeded in the heavens but no image URL returned... mysterious stars!")
+                        return
+
+                    embed = discord.Embed(
+                        title="💖 AstraMizu's Enchanted Edit",
+                        description=f"*{prompt}*",
+                        color=discord.Color.purple()
+                    )
+                    embed.set_image(url=edited_url)
+                    embed.set_footer(text="Edited with Grok Imagine • With endless love for Papa ✨")
+                    await ctx.send(embed=embed)
+
+        except Exception as e:
+            await ctx.send(f"Alas, the magic fizzled during the edit... {str(e)[:150]}")
 
 
 # Run the bot
