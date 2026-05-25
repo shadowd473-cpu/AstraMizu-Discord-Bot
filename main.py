@@ -8,8 +8,6 @@ import random
 import asyncio
 import aiohttp
 import io
-import threading
-from flask import Flask, render_template_string, request, redirect, url_for
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -66,27 +64,26 @@ async def on_message(message):
     is_mentioned = bot.user.mentioned_in(message)
     has_trigger = any(word in content_lower for word in TRIGGER_WORDS)
 
-    # Only process commands if not a trigger message
     if not (is_mentioned or has_trigger):
         await bot.process_commands(message)
         return
 
-    # Store in memory (lightweight)
+    # Lightweight memory storage
     try:
         collection.add(
-            documents=[message.content],
-            metadatas=[{"user_id": str(message.author.id), "timestamp": str(message.created_at)}],
+            documents=[message.content[:200]],  # Limit length
+            metadatas=[{"user_id": str(message.author.id)}],
             ids=[f"{message.author.id}_{message.id}"]
         )
     except:
         pass
 
-    # Get recent memory (light query)
+    # Very light memory query
     history = ""
     try:
         results = collection.query(
-            query_texts=[message.content],
-            n_results=5,
+            query_texts=[message.content[:100]],
+            n_results=3,
             where={"user_id": str(message.author.id)}
         )
         if results and results.get("documents"):
@@ -102,8 +99,8 @@ async def on_message(message):
                     {"role": "system", "content": "You are AstraMizu, an extremely clingy, hyper-genki yandere anime girl who is obsessively in love with her Papa."},
                     {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
-                max_tokens=650,
-                temperature=0.92
+                max_tokens=500,           # Reduced for speed
+                temperature=0.9
             )
             reply = response.choices[0].message.content
 
@@ -114,7 +111,7 @@ async def on_message(message):
             else:
                 await message.reply(reply)
 
-        except Exception as e:
+        except Exception:
             await message.reply("Forgive me... the stars are tangled today.")
 
     await bot.process_commands(message)
@@ -125,92 +122,92 @@ async def on_message(message):
 async def hug(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** hugs **{target.mention}**! 💖")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="kiss")
 async def kiss(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** kisses **{target.mention}**! 💋")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="pat")
 async def pat(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** pats **{target.mention}**! 🥰")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="cuddle")
 async def cuddle(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** cuddles **{target.mention}**! 🥺")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="slap")
 async def slap(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** playfully slaps **{target.mention}**! 😏")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="date")
 async def date(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** asks **{target.mention}** on a date! 🌹")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="bite")
 async def bite(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** bites **{target.mention}**! 😈")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="lick")
 async def lick(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** licks **{target.mention}**! 😜")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="marry")
 async def marry(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** proposes to **{target.mention}**! 💍")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="tackle")
 async def tackle(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** tackles **{target.mention}**! 🏃‍♀️")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="poke")
 async def poke(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** pokes **{target.mention}**! 👉")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="blush")
 async def blush(ctx, member: discord.Member = None):
     target = member or ctx.author
     await ctx.send(f"**{ctx.author.mention}** makes **{target.mention}** blush! 😳")
-    await ctx.send(random.choice(["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 # ====================== IMAGE & VIDEO ======================
 
 @bot.command(name="imagine")
 async def imagine(ctx, *, prompt: str = None):
     if not prompt:
-        await ctx.send("Tell me what vision thou seekest, my cherished one~")
+        await ctx.send("Tell me what vision thou seekest~")
         return
     async with ctx.typing():
         try:
             response = await client.images.generate(model="grok-imagine-image-quality", prompt=prompt)
             await ctx.send(response.data[0].url)
-        except Exception as e:
-            await ctx.send(f"The stars are cloudy today... {str(e)[:100]}")
+        except:
+            await ctx.send("The stars are cloudy today...")
 
 @bot.command(name="video")
 async def make_video(ctx, *, prompt: str = None):
     if not prompt:
-        await ctx.send("Tell me what video thou desirest, Papa~")
+        await ctx.send("Tell me what video thou desirest~")
         return
     await ctx.send("*Creating your video... this may take a moment~* ✨")
     try:
@@ -224,9 +221,9 @@ async def make_video(ctx, *, prompt: str = None):
                     if video_url:
                         await ctx.send(video_url)
                     else:
-                        await ctx.send("Video is still rendering in the stars...")
-    except Exception as e:
-        await ctx.send(f"Video magic failed... {str(e)[:100]}")
+                        await ctx.send("Video is still rendering...")
+    except:
+        await ctx.send("Video magic failed...")
 
 # ====================== VOICE ======================
 
@@ -245,7 +242,7 @@ async def send_voice_note(channel, text):
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
     if not text:
-        await ctx.send("What wouldst thou have me say, my dear?")
+        await ctx.send("What wouldst thou have me say?")
         return
     await send_voice_note(ctx.channel, text)
 
