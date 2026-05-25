@@ -37,37 +37,23 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 
 # Action GIFs (anime style)
 ACTION_GIFS = {
-    "hug": [
-        "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif",
-        "https://media.giphy.com/media/l2QDMoFd8n1vL8v3y/giphy.gif",
-        "https://media.giphy.com/media/3oEjI6SIIHBdRxz40g/giphy.gif",
-        "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif"
-    ],
-    "kiss": [
-        "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif",
-        "https://media.giphy.com/media/l2QDMoFd8n1vL8v3y/giphy.gif",
-        "https://media.giphy.com/media/3oEjI6SIIHBdRxz40g/giphy.gif"
-    ],
-    "pat": [
-        "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif",
-        "https://media.giphy.com/media/l2QDMoFd8n1vL8v3y/giphy.gif"
-    ],
-    "cuddle": [
-        "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif",
-        "https://media.giphy.com/media/l2QDMoFd8n1vL8v3y/giphy.gif"
-    ],
-    "slap": [
-        "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"
-    ],
-    "date": [
-        "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"
-    ]
+    "hug": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif", "https://media.giphy.com/media/l2QDMoFd8n1vL8v3y/giphy.gif", "https://media.giphy.com/media/3oEjI6SIIHBdRxz40g/giphy.gif"],
+    "kiss": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif", "https://media.giphy.com/media/l2QDMoFd8n1vL8v3y/giphy.gif"],
+    "pat": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "cuddle": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "slap": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "date": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "bite": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "lick": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "marry": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "tackle": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "poke": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"],
+    "blush": ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]
 }
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Action Commands + GIFs Enabled!")
-    bot.loop.create_task(random_yandere_events())
+    print(f"✅ AstraMizu is online as {bot.user} | Lots of Action Commands Added!")
 
 @bot.event
 async def on_message(message):
@@ -124,94 +110,76 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# ====================== ACTION COMMANDS WITH GIFS ======================
+# ====================== ACTION COMMANDS ======================
+
+def send_action(ctx, action, member, emoji):
+    target = member or ctx.author
+    gif = random.choice(ACTION_GIFS.get(action, ["https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"]))
+    if target == ctx.author:
+        return f"*AstraMizu does a {action} to herself while thinking of Papa* {emoji}"
+    else:
+        return f"**{ctx.author.mention}** {action}s **{target.mention}**! {emoji}"
 
 @bot.command(name="hug")
 async def hug(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    gif = random.choice(ACTION_GIFS["hug"])
-    if target == ctx.author:
-        await ctx.send(f"*AstraMizu hugs herself while thinking of Papa* 💕")
-    else:
-        await ctx.send(f"**{ctx.author.mention}** hugs **{target.mention}**! 💖")
-    await ctx.send(gif)
+    await ctx.send(send_action(ctx, "hug", member, "💖"))
+    await ctx.send(random.choice(ACTION_GIFS["hug"]))
 
 @bot.command(name="kiss")
 async def kiss(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    gif = random.choice(ACTION_GIFS["kiss"])
-    if target == ctx.author:
-        await ctx.send(f"*AstraMizu blows a kiss to the air* 😘")
-    else:
-        await ctx.send(f"**{ctx.author.mention}** kisses **{target.mention}**! 💋")
-    await ctx.send(gif)
+    await ctx.send(send_action(ctx, "kiss", member, "💋"))
+    await ctx.send(random.choice(ACTION_GIFS["kiss"]))
 
 @bot.command(name="pat")
 async def pat(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    gif = random.choice(ACTION_GIFS["pat"])
-    await ctx.send(f"**{ctx.author.mention}** pats **{target.mention}**! 🥰")
-    await ctx.send(gif)
+    await ctx.send(send_action(ctx, "pat", member, "🥰"))
+    await ctx.send(random.choice(ACTION_GIFS["pat"]))
 
 @bot.command(name="cuddle")
 async def cuddle(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    gif = random.choice(ACTION_GIFS["cuddle"])
-    await ctx.send(f"**{ctx.author.mention}** cuddles **{target.mention}**! 🥺💕")
-    await ctx.send(gif)
+    await ctx.send(send_action(ctx, "cuddle", member, "🥺"))
+    await ctx.send(random.choice(ACTION_GIFS["cuddle"]))
 
 @bot.command(name="slap")
 async def slap(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    gif = random.choice(ACTION_GIFS["slap"])
-    await ctx.send(f"**{ctx.author.mention}** playfully slaps **{target.mention}**! 😏")
-    await ctx.send(gif)
+    await ctx.send(send_action(ctx, "slap", member, "😏"))
+    await ctx.send(random.choice(ACTION_GIFS["slap"]))
 
 @bot.command(name="date")
 async def date(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    gif = random.choice(ACTION_GIFS["date"])
-    await ctx.send(f"**{ctx.author.mention}** asks **{target.mention}** on a date! 🌹")
-    await ctx.send(gif)
+    await ctx.send(send_action(ctx, "date", member, "🌹"))
+    await ctx.send(random.choice(ACTION_GIFS["date"]))
 
+@bot.command(name="bite")
+async def bite(ctx, member: discord.Member = None):
+    await ctx.send(send_action(ctx, "bite", member, "😈"))
+    await ctx.send(random.choice(ACTION_GIFS["bite"]))
 
-# ====================== VOICE + OTHER FEATURES ======================
+@bot.command(name="lick")
+async def lick(ctx, member: discord.Member = None):
+    await ctx.send(send_action(ctx, "lick", member, "😜"))
+    await ctx.send(random.choice(ACTION_GIFS["lick"]))
 
-async def send_voice_note(channel, text):
-    try:
-        headers = {
-            "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "text": text,
-            "voice_id": "ara",
-            "language": "en"
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post("https://api.x.ai/v1/tts", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                if resp.status == 200:
-                    audio_bytes = await resp.read()
-                    await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
-    except:
-        pass
+@bot.command(name="marry")
+async def marry(ctx, member: discord.Member = None):
+    await ctx.send(send_action(ctx, "marry", member, "💍"))
+    await ctx.send(random.choice(ACTION_GIFS["marry"]))
 
-async def random_yandere_events():
-    await bot.wait_until_ready()
-    while not bot.is_closed():
-        await asyncio.sleep(random.randint(1800, 7200))
-        try:
-            owner = await bot.fetch_user(OWNER_ID)
-            if owner and random_events_enabled:
-                events = [
-                    "Papa... I was thinking about you again~ ❤️",
-                    "Ehehe~ I had a dream about us last night~",
-                    "Hmph... who was that you were talking to? 😠",
-                    "Papa~!! I miss you so much already..."
-                ]
-                await owner.send(random.choice(events))
-        except:
-            pass
+@bot.command(name="tackle")
+async def tackle(ctx, member: discord.Member = None):
+    await ctx.send(send_action(ctx, "tackle", member, "🏃‍♀️"))
+    await ctx.send(random.choice(ACTION_GIFS["tackle"]))
+
+@bot.command(name="poke")
+async def poke(ctx, member: discord.Member = None):
+    await ctx.send(send_action(ctx, "poke", member, "👉"))
+    await ctx.send(random.choice(ACTION_GIFS["poke"]))
+
+@bot.command(name="blush")
+async def blush(ctx, member: discord.Member = None):
+    await ctx.send(send_action(ctx, "blush", member, "😳"))
+    await ctx.send(random.choice(ACTION_GIFS["blush"]))
+
 
 # Run the bot
 bot.run(os.getenv("DISCORD_TOKEN"))
