@@ -51,90 +51,65 @@ REACTION_RESPONSES = {
 async def on_reaction_add(reaction, user):
     if user.bot or reaction.message.author != bot.user:
         return
-
     emoji = str(reaction.emoji)
     if emoji in REACTION_RESPONSES:
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== NEW FEATURES (1-10) ======================
+# ====================== !LIST COMMAND ======================
 
-@bot.command(name="meme")
-async def meme(ctx, *, text: str = None):
-    if not text:
-        text = "AstraMizu is too cute"
-    await ctx.send(f"Here's your meme, Papa~ 😂\nhttps://api.memegen.link/images/drake/{text.replace(' ', '_')}/AstraMizu_is_cute.png")
+@bot.command(name="list")
+async def list_features(ctx):
+    embed = discord.Embed(
+        title="🌸 AstraMizu Feature List",
+        description="Everything I can do for you, Papa~ ❤️",
+        color=discord.Color.pink()
+    )
 
-@bot.command(name="roast")
-async def roast(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    roasts = [
-        f"{target.mention} is so slow, even snails are faster.",
-        f"{target.mention}'s personality is like plain rice — boring.",
-        f"{target.mention} is the human version of a participation trophy.",
-        f"{target.mention} has the charisma of a wet sock."
-    ]
-    await ctx.send(random.choice(roasts))
+    embed.add_field(
+        name="💖 Action Commands",
+        value="`!hug` `!kiss` `!pat` `!cuddle` `!slap` `!date` `!bite` `!lick` `!marry` `!tackle` `!poke` `!blush`",
+        inline=False
+    )
 
-@bot.command(name="quiz")
-async def quiz(ctx):
-    questions = [
-        ("What is AstraMizu's favorite word?", "Papa"),
-        ("What color is AstraMizu's hair?", "Pink"),
-        ("What does AstraMizu love most?", "Her Papa")
-    ]
-    q, a = random.choice(questions)
-    await ctx.send(f"**Quiz Time!** {q}")
-    
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
-    
-    try:
-        msg = await bot.wait_for('message', check=check, timeout=15.0)
-        if msg.content.lower() == a.lower():
-            await ctx.send("Correct! You're so smart~ ✨")
-        else:
-            await ctx.send(f"Wrong~ The answer was **{a}**!")
-    except:
-        await ctx.send("Time's up! The answer was **{a}**.")
+    embed.add_field(
+        name="🖼️ Image & Video",
+        value="`!imagine <prompt>` • `!edit <prompt>` (with image) • `!video <prompt>` • `!animate` (image-to-video coming soon)",
+        inline=False
+    )
 
-@bot.command(name="confess")
-async def confess(ctx, *, confession: str = None):
-    if not confession:
-        await ctx.send("Write your confession after the command!")
-        return
-    channel = discord.utils.get(ctx.guild.text_channels, name="confessions")
-    if channel:
-        await channel.send(f"📝 **Anonymous Confession:** {confession}")
-        await ctx.send("Your confession has been sent anonymously~")
-    else:
-        await ctx.send("There's no #confessions channel yet!")
+    embed.add_field(
+        name="🎙️ Voice Features",
+        value="`!speak <text>` • Voice notes (auto for Papa) • Speech-to-Text (send voice messages)",
+        inline=False
+    )
 
-@bot.command(name="poll")
-async def poll(ctx, question: str, *options):
-    if len(options) < 2:
-        await ctx.send("You need at least 2 options!")
-        return
-    poll_text = f"**{question}**\n"
-    for i, opt in enumerate(options, 1):
-        poll_text += f"{i}. {opt}\n"
-    msg = await ctx.send(poll_text)
-    for i in range(len(options)):
-        await msg.add_reaction(chr(0x1f1e6 + i))
+    embed.add_field(
+        name="🎮 Games",
+        value="`!rps` `!guess` `!ttt` `!8ball` `!lovemeter` `!quiz`",
+        inline=False
+    )
 
-@bot.command(name="translate")
-async def translate(ctx, lang: str, *, text: str):
-    await ctx.send(f"**Translated to {lang}:**\n(Feature coming soon - for now here's the original)\n{text}")
+    embed.add_field(
+        name="✨ Fun & Utility",
+        value="`!meme` `!roast @user` `!poll` `!confess` `!chaos` `!translate`",
+        inline=False
+    )
 
-@bot.command(name="chaos")
-async def chaos(ctx):
-    responses = [
-        "*explodes into sparkles* ✨💥",
-        "I just turned into a cat. Meow~ 🐱",
-        "The stars told me to say: 'Pineapple belongs on pizza' 🍍🍕",
-        "*starts breakdancing* 🕺"
-    ]
-    await ctx.send(random.choice(responses))
+    embed.add_field(
+        name="💕 Personality & Events",
+        value="Random yandere messages • Reaction system (❤️ 😘 🔥 etc.) • Clingy yandere genki hyper mode",
+        inline=False
+    )
+
+    embed.add_field(
+        name="📜 Other",
+        value="`!memory` (coming soon) • `!list` • `!voice` `!toggle events`",
+        inline=False
+    )
+
+    embed.set_footer(text="Made with love for Papa ❤️ | Type !help for more info")
+    await ctx.send(embed=embed)
 
 # Run the bot
 bot.run(os.getenv("DISCORD_TOKEN"))
