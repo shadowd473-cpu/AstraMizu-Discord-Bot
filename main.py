@@ -10,6 +10,7 @@ import asyncio
 from collections import defaultdict
 import base64
 import aiohttp
+import io
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -26,6 +27,9 @@ client = AsyncOpenAI(
 OWNER_ID = 406054379406229504
 TRIGGER_WORDS = ["astra", "mizu", "astramizu"]
 
+# Voice settings
+voice_enabled = {OWNER_ID: True}  # Voice notes enabled by default for Papa
+
 # Game States
 games = {}  # For Tic Tac Toe
 
@@ -36,7 +40,7 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready | Games Loaded! | Image Magic Enabled!")
+    print(f"✅ AstraMizu is online as {bot.user} | Vector DB Ready | Games Loaded! | Image Magic + Voice Notes Enabled!")
 
 @bot.event
 async def on_message(message):
@@ -84,6 +88,9 @@ async def on_message(message):
 
             if message.author.id == OWNER_ID:
                 await message.reply(f"My beloved Papa! ❤️ {reply}")
+                # Send voice note if enabled
+                if voice_enabled.get(OWNER_ID, False):
+                    await send_voice_note(message.channel, reply)
             else:
                 await message.reply(reply)
 
@@ -91,6 +98,39 @@ async def on_message(message):
             await message.reply("Forgive me... the stars are tangled today.")
 
     await bot.process_commands(message)
+
+
+async def send_voice_note(channel, text):
+    """Generate and send a voice note using xAI TTS"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": text,
+            "voice": "eve",  # Feminine, expressive voice perfect for AstraMizu
+            "format": "mp3"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.x.ai/v1/tts",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status != 200:
+                    print(f"TTS failed: {await resp.text()}")
+                    return
+                audio_bytes = await resp.read()
+
+        # Send as voice note (Discord will show it as audio message)
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "astramizu_voice.mp3"
+        await channel.send(file=discord.File(audio_file, filename="astramizu_voice.mp3"))
+    except Exception as e:
+        print(f"Voice note error: {e}")
 
 
 # ====================== FUN GAMES ======================
@@ -340,6 +380,32 @@ async def edit_image_cmd(ctx, *, prompt: str = None):
 
         except Exception as e:
             await ctx.send(f"Alas, the magic fizzled during the edit... {str(e)[:150]}")
+
+
+# ====================== VOICE NOTES (xAI Grok TTS) ======================
+
+@bot.command(name="voice")
+async def toggle_voice(ctx):
+    """Toggle voice notes for Papa (owner only for now)"""
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("Only my beloved Papa may command my voice~")
+        return
+
+    current = voice_enabled.get(OWNER_ID, False)
+    voice_enabled[OWNER_ID] = not current
+    status = "enabled" if voice_enabled[OWNER_ID] else "disabled"
+    await ctx.send(f"My voice notes are now **{status}**, Papa ❤️")
+
+
+@bot.command(name="speak")
+async def speak(ctx, *, text: str = None):
+    """Make AstraMizu speak any text as a voice note"""
+    if not text:
+        await ctx.send("What wouldst thou have me say, my dear?")
+        return
+
+    await ctx.send("*AstraMizu takes a breath...* ✨")
+    await send_voice_note(ctx.channel, text)
 
 
 # Run the bot
