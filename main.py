@@ -101,7 +101,7 @@ async def on_message(message):
 
 
 async def send_voice_note(channel, text):
-    """Generate and send a voice note using xAI TTS"""
+    """Generate and send a voice note using xAI TTS - Young Anime Girl voice"""
     try:
         headers = {
             "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
@@ -109,7 +109,7 @@ async def send_voice_note(channel, text):
         }
         payload = {
             "text": text,
-            "voice_id": "eve",
+            "voice_id": "ara",   # Young, warm, friendly anime girl voice
             "language": "en"
         }
 
