@@ -8,14 +8,7 @@ import random
 import asyncio
 import aiohttp
 import io
-
-# Deepgram import with fallback
-try:
-    from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
-    DEEPGRAM_AVAILABLE = True
-except ImportError:
-    DEEPGRAM_AVAILABLE = False
-    print("Deepgram not available - voice features disabled")
+from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -36,8 +29,7 @@ sync_client = OpenAI(
     base_url="https://api.x.ai/v1"
 )
 
-if DEEPGRAM_AVAILABLE:
-    deepgram = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY"))
+deepgram = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY"))
 
 OWNER_ID = 406054379406229504
 TRIGGER_WORDS = ["astra", "mizu", "astramizu"]
@@ -131,120 +123,119 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# VOICE CONVERSATION SYSTEM (only if Deepgram is available)
-if DEEPGRAM_AVAILABLE:
-    async def keep_alive(vc):
-        try:
-            silent_audio = io.BytesIO(b'\x00' * 48000)
-            source = discord.FFmpegPCMAudio(silent_audio, pipe=True)
-            vc.play(source, after=lambda e: asyncio.create_task(keep_alive(vc)))
-        except:
-            pass
+# VOICE CONVERSATION SYSTEM
+async def keep_alive(vc):
+    try:
+        silent_audio = io.BytesIO(b'\x00' * 48000)
+        source = discord.FFmpegPCMAudio(silent_audio, pipe=True)
+        vc.play(source, after=lambda e: asyncio.create_task(keep_alive(vc)))
+    except:
+        pass
 
-    async def start_listening(vc, text_channel):
-        try:
-            dg_connection = deepgram.listen.live.v("1")
+async def start_listening(vc, text_channel):
+    try:
+        dg_connection = deepgram.listen.live.v("1")
 
-            async def on_message(result, **kwargs):
-                transcript = result.channel.alternatives[0].transcript
-                if transcript and len(transcript.strip()) > 3:
-                    try:
-                        grok_response = await client.chat.completions.create(
-                            model="grok-4",
-                            messages=[
-                                {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. Keep responses short and natural for voice conversation."},
-                                {"role": "user", "content": transcript}
-                            ],
-                            max_tokens=300,
-                            temperature=0.9
-                        )
-                        reply = grok_response.choices[0].message.content
-                        await speak_in_voice_channel(vc, reply)
-                    except Exception as e:
-                        print(f"Grok error: {e}")
-
-            dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
-
-            options = LiveOptions(
-                model="nova-2",
-                language="en-US",
-                smart_format=True,
-                interim_results=True,
-                vad_events=True
-            )
-
-            await dg_connection.start(options)
-            listening_tasks[vc.guild.id] = dg_connection
-
-        except Exception as e:
-            await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
-
-    async def speak_in_voice_channel(vc, text):
-        try:
-            headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
-            payload = {"text": text, "voice_id": "ara", "language": "en"}
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post("https://api.x.ai/v1/tts", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                    if resp.status == 200:
-                        audio_bytes = await resp.read()
-                        with open("temp_voice.mp3", "wb") as f:
-                            f.write(audio_bytes)
-
-                        source = discord.FFmpegPCMAudio("temp_voice.mp3")
-                        if vc.is_playing():
-                            vc.stop()
-                        vc.play(source)
-        except Exception as e:
-            print(f"TTS in VC failed: {e}")
-
-    @bot.command(name="join")
-    async def join_vc(ctx):
-        if ctx.author.voice is None:
-            await ctx.send("You're not in a voice channel!")
-            return
-
-        voice_channel = ctx.author.voice.channel
-
-        if ctx.guild.id in voice_clients:
-            await ctx.send("I'm already in a voice channel!")
-            return
-
-        try:
-            vc = await voice_channel.connect()
-            voice_clients[ctx.guild.id] = vc
-
-            await ctx.send(f"Joined {voice_channel.name}! I'm now listening~ ✨")
-
-            await keep_alive(vc)
-            await start_listening(vc, ctx.channel)
-
-        except Exception as e:
-            await ctx.send(f"Failed to join: {str(e)[:100]}")
-
-    @bot.command(name="leave")
-    async def leave_vc(ctx):
-        if ctx.guild.id not in voice_clients:
-            await ctx.send("I'm not in a voice channel!")
-            return
-
-        try:
-            vc = voice_clients[ctx.guild.id]
-            if vc.is_connected():
-                await vc.disconnect()
-
-            if ctx.guild.id in listening_tasks:
+        async def on_message(result, **kwargs):
+            transcript = result.channel.alternatives[0].transcript
+            if transcript and len(transcript.strip()) > 3:
                 try:
-                    await listening_tasks[ctx.guild.id].finish()
-                except:
-                    pass
-                del listening_tasks[ctx.guild.id]
+                    grok_response = await client.chat.completions.create(
+                        model="grok-4",
+                        messages=[
+                            {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. Keep responses short and natural for voice conversation."},
+                            {"role": "user", "content": transcript}
+                        ],
+                        max_tokens=300,
+                        temperature=0.9
+                    )
+                    reply = grok_response.choices[0].message.content
+                    await speak_in_voice_channel(vc, reply)
+                except Exception as e:
+                    print(f"Grok error: {e}")
 
-            del voice_clients[ctx.guild.id]
-            await ctx.send("Left the voice channel. See you later~ 👋")
+        dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
 
-        except Exception as e:
-            await ctx.send(f"Error leaving: {str(e)[:100]}")
+        options = LiveOptions(
+            model="nova-2",
+            language="en-US",
+            smart_format=True,
+            interim_results=True,
+            vad_events=True
+        )
+
+        await dg_connection.start(options)
+        listening_tasks[vc.guild.id] = dg_connection
+
+    except Exception as e:
+        await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
+
+async def speak_in_voice_channel(vc, text):
+    try:
+        headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
+        payload = {"text": text, "voice_id": "ara", "language": "en"}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://api.x.ai/v1/tts", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    audio_bytes = await resp.read()
+                    with open("temp_voice.mp3", "wb") as f:
+                        f.write(audio_bytes)
+
+                    source = discord.FFmpegPCMAudio("temp_voice.mp3")
+                    if vc.is_playing():
+                        vc.stop()
+                    vc.play(source)
+    except Exception as e:
+        print(f"TTS in VC failed: {e}")
+
+@bot.command(name="join")
+async def join_vc(ctx):
+    if ctx.author.voice is None:
+        await ctx.send("You're not in a voice channel!")
+        return
+
+    voice_channel = ctx.author.voice.channel
+
+    if ctx.guild.id in voice_clients:
+        await ctx.send("I'm already in a voice channel!")
+        return
+
+    try:
+        vc = await voice_channel.connect()
+        voice_clients[ctx.guild.id] = vc
+
+        await ctx.send(f"Joined {voice_channel.name}! I'm now listening~ ✨")
+
+        await keep_alive(vc)
+        await start_listening(vc, ctx.channel)
+
+    except Exception as e:
+        await ctx.send(f"Failed to join: {str(e)[:100]}")
+
+@bot.command(name="leave")
+async def leave_vc(ctx):
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+
+    try:
+        vc = voice_clients[ctx.guild.id]
+        if vc.is_connected():
+            await vc.disconnect()
+
+        if ctx.guild.id in listening_tasks:
+            try:
+                await listening_tasks[ctx.guild.id].finish()
+            except:
+                pass
+            del listening_tasks[ctx.guild.id]
+
+        del voice_clients[ctx.guild.id]
+        await ctx.send("Left the voice channel. See you later~ 👋")
+
+    except Exception as e:
+        await ctx.send(f"Error leaving: {str(e)[:100]}")
 
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
