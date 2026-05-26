@@ -33,7 +33,7 @@ chroma_client = chromadb.PersistentClient(path="./chroma_db")
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 collection = chroma_client.get_or_create_collection(name="astra_memory", embedding_function=embedding_function)
 
-# ====================== REACTION SYSTEM ======================
+# REACTION SYSTEM
 REACTION_RESPONSES = {
     "❤️": ["Aww~ Thank you! That makes me happy! 💖", "Ehehe~ You're sweet! ❤️"],
     "😘": ["*blushes* K-Kyaa~! Thank you! 😳", "Mwah~ Right back at you! 💋"],
@@ -53,8 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== MAIN HANDLER ======================
-
+# MAIN HANDLER
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -108,20 +107,17 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ====================== SONG & SINGER (USING GROK SEARCH) ======================
-
+# SONG COMMAND
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
     if not country:
         await ctx.send("Tell me which country! Example: `!song Japan`")
         return
 
-    await ctx.send(f"*Let me search for the most popular song in {country}...* ✨")
+    await ctx.send(f"*Searching for the most popular song in {country}...* ✨")
 
-    # This will be handled by Grok's web search for accuracy
-    # For now, using improved search
     try:
-        query = f"most popular song in {country} 2026"
+        query = f"most popular song in {country} right now 2026"
         url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
 
         async with aiohttp.ClientSession() as session:
@@ -131,29 +127,25 @@ async def song_command(ctx, *, country: str = None):
                     abstract = data.get("AbstractText", "")
 
                     if abstract and len(abstract) > 20:
-                        await ctx.send(f"**Most Popular Song in {country}:**
-{abstract}")
+                        await ctx.send(f"**Most Popular Song in {country}:**\n{abstract}")
                     else:
-                        # Fallback to Grok knowledge
-                        await ctx.send(f"**Most Popular Song in {country}:**
-Based on current trends, check the latest Billboard or Spotify charts for {country}!")
+                        await ctx.send(f"**Most Popular Song in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
                 else:
-                    await ctx.send(f"**Most Popular Song in {country}:**
-I recommend checking Spotify's top charts for {country} right now!")
+                    await ctx.send(f"**Most Popular Song in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
     except:
-        await ctx.send(f"**Most Popular Song in {country}:**
-Check the latest music charts for accurate results!")
+        await ctx.send(f"**Most Popular Song in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
 
+# SINGER COMMAND
 @bot.command(name="singer")
 async def singer_command(ctx, *, country: str = None):
     if not country:
         await ctx.send("Tell me which country! Example: `!singer South Korea`")
         return
 
-    await ctx.send(f"*Let me search for the top singer in {country}...* ✨")
+    await ctx.send(f"*Searching for the top singer in {country}...* ✨")
 
     try:
-        query = f"most popular singer in {country} 2026"
+        query = f"most popular singer in {country} right now 2026"
         url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
 
         async with aiohttp.ClientSession() as session:
@@ -163,20 +155,15 @@ async def singer_command(ctx, *, country: str = None):
                     abstract = data.get("AbstractText", "")
 
                     if abstract and len(abstract) > 20:
-                        await ctx.send(f"**Top Singer in {country}:**
-{abstract}")
+                        await ctx.send(f"**Top Singer in {country}:**\n{abstract}")
                     else:
-                        await ctx.send(f"**Top Singer in {country}:**
-Based on current trends, check Billboard or Spotify for {country}!")
+                        await ctx.send(f"**Top Singer in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
                 else:
-                    await ctx.send(f"**Top Singer in {country}:**
-I recommend checking the latest music charts for {country}!")
+                    await ctx.send(f"**Top Singer in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
     except:
-        await ctx.send(f"**Top Singer in {country}:**
-Check the latest music charts for accurate results!")
+        await ctx.send(f"**Top Singer in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
 
-# ====================== ACTION COMMANDS ======================
-
+# ACTION COMMANDS
 @bot.command(name="hug")
 async def hug(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -249,8 +236,7 @@ async def blush(ctx, member: discord.Member = None):
     await ctx.send(f"**{ctx.author.mention}** makes **{target.mention}** blush! 😳")
     await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
-# ====================== IMAGE ======================
-
+# IMAGE
 @bot.command(name="imagine")
 async def imagine(ctx, *, prompt: str = None):
     if not prompt:
@@ -263,8 +249,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# ====================== VOICE ======================
-
+# VOICE
 async def send_voice_note(channel, text):
     try:
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
@@ -284,8 +269,7 @@ async def speak(ctx, *, text: str = None):
         return
     await send_voice_note(ctx.channel, text)
 
-# ====================== GAMES & FUN ======================
-
+# GAMES & FUN
 @bot.command(name="rps")
 async def rps(ctx, choice: str = None):
     if not choice:
@@ -339,8 +323,7 @@ async def list_features(ctx):
     embed.add_field(name="Other", value="!list !confess !poll", inline=False)
     await ctx.send(embed=embed)
 
-# ====================== ASYNC BACKGROUND TASKS ======================
-
+# BACKGROUND TASKS
 async def random_yandere_events():
     await bot.wait_until_ready()
     while not bot.is_closed():
@@ -349,18 +332,14 @@ async def random_yandere_events():
             try:
                 owner = await bot.fetch_user(OWNER_ID)
                 if owner:
-                    events = [
-                        "I was thinking about everyone today~ ❤️",
-                        "Ehehe~ Had a fun dream last night~",
-                        "Hope you're all having a good day!"
-                    ]
+                    events = ["I was thinking about everyone today~ ❤️", "Ehehe~ Had a fun dream last night~", "Hope you're all having a good day!"]
                     await owner.send(random.choice(events))
             except:
                 pass
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Using Grok Search for Music Commands!")
+    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Fixed!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
