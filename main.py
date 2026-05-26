@@ -113,7 +113,7 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# HELPER: Accurate answer using Grok's Web Search tool
+# HELPER: Accurate answer using Grok's Web Search tool (FIXED parsing)
 async def get_accurate_grok_answer(question: str) -> str:
     def _search():
         try:
@@ -127,20 +127,32 @@ async def get_accurate_grok_answer(question: str) -> str:
                 ],
                 tools=[{"type": "web_search"}]
             )
-            # Try common response structures for xAI Responses API
-            if hasattr(resp, 'output') and resp.output:
-                try:
-                    return resp.output[0].content[0].text
-                except (IndexError, AttributeError, TypeError):
-                    pass
-            if hasattr(resp, 'text') and resp.text:
-                return resp.text
-            if hasattr(resp, 'choices') and resp.choices:
-                return resp.choices[0].message.content
-            # Fallback to string representation or a helpful message
-            return str(resp)[:2000] if resp else "No accurate data found right now."
+
+            # Primary path: Standard xAI Responses API structure
+            # output -> message -> content -> output_text -> text
+            if getattr(resp, 'output', None):
+                for msg in resp.output:
+                    if getattr(msg, 'content', None):
+                        for part in msg.content:
+                            if getattr(part, 'type', None) == 'output_text' and getattr(part, 'text', None):
+                                return part.text.strip()
+
+            # Fallbacks for different client wrapper versions
+            for attr_name in ['output_text', 'text', 'content']:
+                val = getattr(resp, attr_name, None)
+                if isinstance(val, str) and len(val) > 30:
+                    return val.strip()
+
+            # Last resort: scan __dict__ for any long clean string
+            if hasattr(resp, '__dict__'):
+                for k, v in resp.__dict__.items():
+                    if isinstance(v, str) and len(v) > 50 and 'Response' not in str(type(v)):
+                        return v.strip()
+
+            return "I received search results but had trouble formatting them. Try asking again or use normal chat!"
+
         except Exception as e:
-            return f"Web search temporarily unavailable: {str(e)[:100]}. Try asking me directly!"
+            return f"Web search is temporarily having issues: {str(e)[:100]}. You can still chat with me normally!"
 
     return await asyncio.to_thread(_search)
 
