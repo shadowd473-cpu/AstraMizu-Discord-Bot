@@ -8,8 +8,7 @@ import random
 import asyncio
 import aiohttp
 import io
-from deepgram import DeepgramClient
-from deepgram.clients.listen.v1 import LiveTranscriptionEvents, LiveOptions
+from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
 
 intents = discord.Intents.default()
 intents.message_content = True
