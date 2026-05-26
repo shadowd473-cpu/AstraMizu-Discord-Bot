@@ -35,13 +35,13 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 
 # ====================== REACTION SYSTEM ======================
 REACTION_RESPONSES = {
-    "❤️": ["Aww~ Thank you Papa! My heart is melting! 💖", "Ehehe~ I love you too! ❤️"],
-    "😘": ["*blushes hard* K-Kyaa~! You kissed me through the screen! 😳", "Mwah~ Right back at you! 💋"],
-    "🔥": ["Oho~ Feeling spicy today, are we? 😏", "Papa is so hot when he's like this~ 🔥"],
-    "😭": ["No no no! Don't cry! I'm here for you... *hugs tightly*", "Papa... tell me what's wrong. I'll make it better."],
-    "😡": ["H-Hey! Why are you mad at me?! *pouts*", "If you're angry... is it because of someone else? 😠"],
-    "😂": ["Ehehe~ Did I make you laugh? Mission accomplished! 😄", "Your laugh is my favorite sound~"],
-    "👀": ["*notices you staring* W-What is it? Do I look cute? 👀", "Caught you looking~"]
+    "❤️": ["Aww~ Thank you! That makes me happy! 💖", "Ehehe~ You're sweet! ❤️"],
+    "😘": ["*blushes* K-Kyaa~! Thank you! 😳", "Mwah~ Right back at you! 💋"],
+    "🔥": ["Oho~ Feeling bold today? 😏", "You're making me blush~ 🔥"],
+    "😭": ["No no! Don't be sad! I'm here for you~", "Tell me what's wrong. I'll listen."],
+    "😡": ["H-Hey! Why are you mad? *pouts*", "Did I do something wrong?"],
+    "😂": ["Ehehe~ I'm glad I made you laugh! 😄", "Your laugh is cute~"],
+    "👀": ["*notices you staring* W-What? Do I have something on my face? 👀", "Caught you looking~"]
 }
 
 @bot.event
@@ -53,7 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== MAIN HANDLER (OWNER vs OTHERS) ======================
+# ====================== MAIN HANDLER (EVERYONE TREATED THE SAME) ======================
 
 @bot.event
 async def on_message(message):
@@ -83,7 +83,7 @@ async def on_message(message):
     try:
         results = collection.query(
             query_texts=[message.content[:80]],
-            n_results=3,
+            n_results=4,
             where={"user_id": str(message.author.id)}
         )
         if results and results.get("documents"):
@@ -96,25 +96,17 @@ async def on_message(message):
             response = await client.chat.completions.create(
                 model="grok-4",
                 messages=[
-                    {"role": "system", "content": "You are AstraMizu, an extremely clingy, hyper-genki yandere anime girl who is obsessively in love with her Papa."},
+                    {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. You're friendly, a bit teasing, kind, and love making people smile. You speak in a cute, energetic way but you're not obsessive or overly clingy. Use some light anime girl expressions like 'Ehehe~', 'Kyaa!', and emojis naturally."},
                     {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
-                max_tokens=450,
-                temperature=0.9
+                max_tokens=500,
+                temperature=0.92
             )
             reply = response.choices[0].message.content
-
-            # Only owner gets special affectionate replies
-            if message.author.id == OWNER_ID:
-                await message.reply(f"My beloved Papa! ❤️ {reply}")
-                if voice_enabled.get(OWNER_ID, False):
-                    asyncio.create_task(send_voice_note(message.channel, reply))
-            else:
-                # Normal friendly response for everyone else
-                await message.reply(reply)
+            await message.reply(reply)
 
         except Exception:
-            await message.reply("Forgive me... the stars are tangled today.")
+            await message.reply("Sorry... the stars are a bit cloudy today.")
 
     await bot.process_commands(message)
 
@@ -197,7 +189,7 @@ async def blush(ctx, member: discord.Member = None):
 @bot.command(name="imagine")
 async def imagine(ctx, *, prompt: str = None):
     if not prompt:
-        await ctx.send("Tell me what vision thou seekest~")
+        await ctx.send("Tell me what vision you want~")
         return
     async with ctx.typing():
         try:
@@ -209,7 +201,7 @@ async def imagine(ctx, *, prompt: str = None):
 @bot.command(name="video")
 async def make_video(ctx, *, prompt: str = None):
     if not prompt:
-        await ctx.send("Tell me what video thou desirest~")
+        await ctx.send("Tell me what video you want~")
         return
     await ctx.send("*Creating your video... this may take a moment~* ✨")
     try:
@@ -244,7 +236,7 @@ async def send_voice_note(channel, text):
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
     if not text:
-        await ctx.send("What wouldst thou have me say?")
+        await ctx.send("What would you like me to say?")
         return
     await send_voice_note(ctx.channel, text)
 
@@ -314,10 +306,9 @@ async def random_yandere_events():
                 owner = await bot.fetch_user(OWNER_ID)
                 if owner:
                     events = [
-                        "Papa... I was thinking about you again~ ❤️",
-                        "Ehehe~ I had a dream about us last night~",
-                        "Hmph... who was that you were talking to? 😠",
-                        "Papa~!! I miss you so much already..."
+                        "I was thinking about everyone today~ ❤️",
+                        "Ehehe~ Had a fun dream last night~",
+                        "Hope you're all having a good day!"
                     ]
                     await owner.send(random.choice(events))
             except:
@@ -325,7 +316,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Fixed Owner-Only Replies!")
+    print(f"✅ AstraMizu is online as {bot.user} | Normal Anime Girl Mode + Memory!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
