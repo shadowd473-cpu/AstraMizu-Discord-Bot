@@ -8,7 +8,8 @@ import random
 import asyncio
 import aiohttp
 import io
-from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
+from deepgram import DeepgramClient
+from deepgram.clients.listen.v1 import LiveTranscriptionEvents, LiveOptions
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -125,7 +126,6 @@ async def on_message(message):
 
 # VOICE CONVERSATION SYSTEM
 async def keep_alive(vc):
-    """Play silent audio to prevent Discord from disconnecting the bot"""
     try:
         silent_audio = io.BytesIO(b'\x00' * 48000)
         source = discord.FFmpegPCMAudio(silent_audio, pipe=True)
