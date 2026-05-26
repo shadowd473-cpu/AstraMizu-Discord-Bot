@@ -108,6 +108,10 @@ async def on_message(message):
             reply = response.choices[0].message.content
             await message.reply(reply)
 
+            # NEW: Automatically speak everything she types (voice message)
+            if len(reply) < 450:  # avoid very long voice messages
+                await send_voice_note(message.channel, reply)
+
         except Exception:
             await message.reply("Sorry... the stars are a bit cloudy today.")
 
@@ -278,7 +282,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# VOICE - Now sends as proper Discord Voice Message (waveform style)
+# VOICE - Sends as audio file (reliable)
 async def send_voice_note(channel, text):
     try:
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
@@ -288,7 +292,7 @@ async def send_voice_note(channel, text):
                 if resp.status == 200:
                     audio_bytes = await resp.read()
                     file = discord.File(io.BytesIO(audio_bytes), filename="voice.mp3")
-                    await channel.send(file=file, voice_message=True)  # Proper voice message
+                    await channel.send(file=file)
                 else:
                     await channel.send("Sorry, voice is having a little trouble right now~ Try again later!")
     except Exception as e:
@@ -372,7 +376,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Now sends proper voice messages!")
+    print(f"✅ AstraMizu is online as {bot.user} | Now speaks everything she types automatically!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
