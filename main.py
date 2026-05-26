@@ -113,23 +113,23 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# HELPER: Accurate answer using Grok's Web Search tool (FIXED parsing)
-async def get_accurate_grok_answer(question: str) -> str:
+# HELPER: Accurate answer using web search (short & clean version)
+async def get_accurate_grok_answer(question: str, short: bool = False) -> str:
     def _search():
         try:
+            prompt = f"Answer this question accurately and up-to-date using real-time web search: {question}"
+            if short:
+                prompt += ". Give ONLY the essential facts: song title, artist/writer, and date/period. Keep it very short and clean, no extra fluff."
+            else:
+                prompt += ". Provide a clear, concise, factual response with key details."
+
             resp = sync_client.responses.create(
                 model="grok-4.3",
-                input=[
-                    {
-                        "role": "user",
-                        "content": f"Answer this question accurately and up-to-date using real-time web search if needed: {question}. Provide a clear, concise, factual response with key details and mention sources or charts if relevant."
-                    }
-                ],
+                input=[{"role": "user", "content": prompt}],
                 tools=[{"type": "web_search"}]
             )
 
             # Primary path: Standard xAI Responses API structure
-            # output -> message -> content -> output_text -> text
             if getattr(resp, 'output', None):
                 for msg in resp.output:
                     if getattr(msg, 'content', None):
@@ -137,62 +137,60 @@ async def get_accurate_grok_answer(question: str) -> str:
                             if getattr(part, 'type', None) == 'output_text' and getattr(part, 'text', None):
                                 return part.text.strip()
 
-            # Fallbacks for different client wrapper versions
+            # Fallbacks
             for attr_name in ['output_text', 'text', 'content']:
                 val = getattr(resp, attr_name, None)
-                if isinstance(val, str) and len(val) > 30:
+                if isinstance(val, str) and len(val) > 20:
                     return val.strip()
 
-            # Last resort: scan __dict__ for any long clean string
             if hasattr(resp, '__dict__'):
                 for k, v in resp.__dict__.items():
-                    if isinstance(v, str) and len(v) > 50 and 'Response' not in str(type(v)):
+                    if isinstance(v, str) and len(v) > 30 and 'Response' not in str(type(v)):
                         return v.strip()
 
-            return "I received search results but had trouble formatting them. Try asking again or use normal chat!"
+            return "Couldn't get clean data right now."
 
         except Exception as e:
-            return f"Web search is temporarily having issues: {str(e)[:100]}. You can still chat with me normally!"
+            return f"Search issue: {str(e)[:80]}"
 
     return await asyncio.to_thread(_search)
 
-# SONG COMMAND - Now powered by Grok Web Search for accuracy!
+# SONG COMMAND - Short & clean (no Grok mention)
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
     if not country:
-        await ctx.send("Tell me which country! Example: `!song Japan` or `!song USA`")
+        await ctx.send("Tell me which country! Example: `!song Japan`")
         return
 
-    await ctx.send(f"*Using Grok's real-time web search for the most popular song in {country} right now...* ✨")
+    await ctx.send(f"*Searching for the top song in {country}...* ✨")
 
-    query = f"What is the current most popular or top song in {country} as of May 2026? Include song title, artist, chart position if available (Billboard, Spotify, etc.), and a short description."
-    answer = await get_accurate_grok_answer(query)
-    await ctx.send(f"**🎵 Most Popular Song in {country} (via Grok Web Search):**\n{answer}")
+    query = f"What is the current most popular song in {country} right now (May 2026)?"
+    answer = await get_accurate_grok_answer(query, short=True)
+    await ctx.send(f"**🎵 Top song in {country}:**\n{answer}")
 
-# SINGER COMMAND - Now powered by Grok Web Search for accuracy!
+# SINGER COMMAND - Short & clean (no Grok mention)
 @bot.command(name="singer")
 async def singer_command(ctx, *, country: str = None):
     if not country:
-        await ctx.send("Tell me which country! Example: `!singer South Korea` or `!singer Japan`")
+        await ctx.send("Tell me which country! Example: `!singer South Korea`")
         return
 
-    await ctx.send(f"*Using Grok's real-time web search for the top singer in {country} right now...* ✨")
+    await ctx.send(f"*Searching for the top singer in {country}...* ✨")
 
-    query = f"Who is the most popular or top singer/artist in {country} as of May 2026? Include name, notable songs or achievements, and current ranking if available from charts or popularity metrics."
-    answer = await get_accurate_grok_answer(query)
-    await ctx.send(f"**🎤 Top Singer in {country} (via Grok Web Search):**\n{answer}")
+    query = f"Who is the most popular singer/artist in {country} right now (May 2026)?"
+    answer = await get_accurate_grok_answer(query, short=True)
+    await ctx.send(f"**🎤 Top singer in {country}:**\n{answer}")
 
-# NEW: !ask command for accurate answers to ANY question using Grok Web Search
+# !ask stays informative (for general questions)
 @bot.command(name="ask")
 async def ask_command(ctx, *, question: str = None):
     if not question:
-        await ctx.send("Ask me anything for an accurate, up-to-date answer powered by Grok's web search! Example: `!ask Who won the 2026 Grammy for Album of the Year?` or `!ask Current top K-pop group`")
+        await ctx.send("Ask me anything! Example: `!ask current #1 song in USA`")
         return
 
-    await ctx.send(f"*Searching the web with Grok for an accurate answer to: \"{question}\" ...* ✨")
-
-    answer = await get_accurate_grok_answer(question)
-    await ctx.send(f"**📚 Accurate Answer (Grok Web Search):**\n{answer}\n\n*Want more details or a fun take? Just mention me or use my normal chat!*")
+    await ctx.send(f"*Looking that up...* ✨")
+    answer = await get_accurate_grok_answer(question, short=False)
+    await ctx.send(f"**Answer:**\n{answer}")
 
 # ACTION COMMANDS (unchanged)
 @bot.command(name="hug")
@@ -300,7 +298,7 @@ async def speak(ctx, *, text: str = None):
         return
     await send_voice_note(ctx.channel, text)
 
-# GAMES & FUN (unchanged, added note for !ask)
+# GAMES & FUN (unchanged)
 @bot.command(name="rps")
 async def rps(ctx, choice: str = None):
     if not choice:
@@ -348,8 +346,8 @@ async def chaos(ctx):
 async def list_features(ctx):
     embed = discord.Embed(title="🌸 AstraMizu Feature List", color=discord.Color.pink())
     embed.add_field(name="Action Commands", value="!hug !kiss !pat !cuddle !slap !date !bite !lick !marry !tackle !poke !blush", inline=False)
-    embed.add_field(name="Music Commands (Now Super Accurate!)", value="!song <country> • !singer <country>  *(powered by Grok Web Search)*", inline=False)
-    embed.add_field(name="Accurate Answers", value="!ask <any question>  *(real-time web search powered by Grok for facts, news, charts, rankings!)*", inline=False)
+    embed.add_field(name="Music Commands", value="!song <country> • !singer <country>", inline=False)
+    embed.add_field(name="Ask Anything", value="!ask <question>", inline=False)
     embed.add_field(name="Image & Voice", value="!imagine <prompt> • !speak <text>", inline=False)
     embed.add_field(name="Games & Fun", value="!rps !guess !8ball !lovemeter !meme !roast !chaos", inline=False)
     embed.add_field(name="Other", value="!list", inline=False)
@@ -371,7 +369,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Now with Grok Web Search for accurate !song, !singer & !ask!")
+    print(f"✅ AstraMizu is online as {bot.user} | Music commands now short & clean!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
