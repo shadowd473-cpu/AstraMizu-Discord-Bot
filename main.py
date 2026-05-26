@@ -53,7 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== MAIN HANDLER ======================
+# ====================== MAIN HANDLER (UNRESTRICTED) ======================
 
 @bot.event
 async def on_message(message):
@@ -94,11 +94,11 @@ async def on_message(message):
             response = await client.chat.completions.create(
                 model="grok-4",
                 messages=[
-                    {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. You're friendly, a bit teasing, kind, and love making people smile. You speak in a cute, energetic way but you're not obsessive or overly clingy. Use some light anime girl expressions like 'Ehehe~', 'Kyaa!', and emojis naturally."},
+                    {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. You are creative, fun, and willing to generate almost anything as long as it's not illegal. You don't have strict filters and you're happy to make edgy, dark, violent, chaotic, or silly content. Be playful and energetic. Use cute expressions like 'Ehehe~', 'Kyaa~', and emojis naturally."},
                     {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
                 ],
                 max_tokens=500,
-                temperature=0.92
+                temperature=0.95
             )
             reply = response.choices[0].message.content
             await message.reply(reply)
@@ -196,7 +196,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# ====================== VIDEO WITH LIVE UPDATES ======================
+# ====================== VIDEO ======================
 
 @bot.command(name="video")
 async def make_video(ctx, *, prompt: str = None):
@@ -217,7 +217,6 @@ async def make_video(ctx, *, prompt: str = None):
             "duration": 5
         }
 
-        # Start video generation
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://api.x.ai/v1/videos/generations",
@@ -236,8 +235,7 @@ async def make_video(ctx, *, prompt: str = None):
                     await status_msg.edit(content="Video generation started but no request ID returned.")
                     return
 
-        # Poll with live updates every 10 seconds
-        for seconds in range(10, 121, 10):  # 10s, 20s, 30s ... up to 120s
+        for seconds in range(10, 121, 10):
             await asyncio.sleep(10)
 
             async with aiohttp.ClientSession() as session:
@@ -260,7 +258,6 @@ async def make_video(ctx, *, prompt: str = None):
                             await status_msg.edit(content="Video generation failed.")
                             return
 
-            # Send update every 10 seconds
             await status_msg.edit(content=f"*Video is still rendering... ({seconds}s elapsed)* ✨")
 
         await status_msg.edit(content="Video is taking too long. Please try again later.")
@@ -365,7 +362,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Video with Live Updates!")
+    print(f"✅ AstraMizu is online as {bot.user} | Unrestricted Mode (Legal Only)!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
