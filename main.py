@@ -38,8 +38,7 @@ voice_enabled = {OWNER_ID: True}
 random_events_enabled = True
 games = {}
 
-chroma_client = chromadb.PersistentClient(path="./chroma_db
-")
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 collection = chroma_client.get_or_create_collection(name="astra_memory", embedding_function=embedding_function)
 
@@ -128,22 +127,19 @@ async def on_message(message):
 async def keep_alive(vc):
     """Play silent audio to prevent Discord from disconnecting the bot"""
     try:
-        # Create a silent audio source (1 second of silence looped)
-        silent_audio = io.BytesIO(b'\x00' * 48000)  # 1 second of silence at 48kHz
+        silent_audio = io.BytesIO(b'\x00' * 48000)
         source = discord.FFmpegPCMAudio(silent_audio, pipe=True)
         vc.play(source, after=lambda e: asyncio.create_task(keep_alive(vc)))
     except:
         pass
 
 async def start_listening(vc, text_channel):
-    """Start real-time listening with Deepgram"""
     try:
         dg_connection = deepgram.listen.live.v("1")
 
         async def on_message(result, **kwargs):
             transcript = result.channel.alternatives[0].transcript
             if transcript and len(transcript.strip()) > 3:
-                # Send to Grok
                 try:
                     grok_response = await client.chat.completions.create(
                         model="grok-4",
@@ -155,10 +151,7 @@ async def start_listening(vc, text_channel):
                         temperature=0.9
                     )
                     reply = grok_response.choices[0].message.content
-
-                    # Speak in VC using xAI TTS
                     await speak_in_voice_channel(vc, reply)
-
                 except Exception as e:
                     print(f"Grok error: {e}")
 
@@ -179,7 +172,6 @@ async def start_listening(vc, text_channel):
         await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
 
 async def speak_in_voice_channel(vc, text):
-    """Convert text to speech and play in voice channel"""
     try:
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
         payload = {"text": text, "voice_id": "ara", "language": "en"}
@@ -188,7 +180,6 @@ async def speak_in_voice_channel(vc, text):
             async with session.post("https://api.x.ai/v1/tts", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status == 200:
                     audio_bytes = await resp.read()
-                    # Save to temp file for FFmpeg
                     with open("temp_voice.mp3", "wb") as f:
                         f.write(audio_bytes)
 
@@ -217,10 +208,7 @@ async def join_vc(ctx):
 
         await ctx.send(f"Joined {voice_channel.name}! I'm now listening~ ✨")
 
-        # Start silent audio loop to stay connected
         await keep_alive(vc)
-
-        # Start listening
         await start_listening(vc, ctx.channel)
 
     except Exception as e:
@@ -237,7 +225,6 @@ async def leave_vc(ctx):
         if vc.is_connected():
             await vc.disconnect()
 
-        # Clean up
         if ctx.guild.id in listening_tasks:
             try:
                 await listening_tasks[ctx.guild.id].finish()
@@ -251,7 +238,6 @@ async def leave_vc(ctx):
     except Exception as e:
         await ctx.send(f"Error leaving: {str(e)[:100]}")
 
-# EXISTING COMMANDS (kept for compatibility)
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
     if not text:
@@ -271,7 +257,6 @@ async def send_voice_note(channel, text):
     except Exception as e:
         await channel.send(f"Voice failed: {str(e)[:80]}")
 
-# SONG, SINGER, ASK, and other commands remain the same (shortened for space)
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
     if not country:
