@@ -4,5 +4,5 @@ aiohttp
 chromadb
 sentence-transformers
 flask
-deepgram-sdk
+deepgram-sdk==3.4.0
 PyNaCl
