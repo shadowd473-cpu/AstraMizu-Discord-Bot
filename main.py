@@ -53,7 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== MAIN HANDLER (UNRESTRICTED) ======================
+# ====================== MAIN HANDLER ======================
 
 @bot.event
 async def on_message(message):
@@ -196,7 +196,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# ====================== VIDEO ======================
+# ====================== VIDEO - NO TIMEOUT (SEND NO MATTER WHAT) ======================
 
 @bot.command(name="video")
 async def make_video(ctx, *, prompt: str = None):
@@ -217,6 +217,7 @@ async def make_video(ctx, *, prompt: str = None):
             "duration": 5
         }
 
+        # Start video generation
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://api.x.ai/v1/videos/generations",
@@ -235,8 +236,11 @@ async def make_video(ctx, *, prompt: str = None):
                     await status_msg.edit(content="Video generation started but no request ID returned.")
                     return
 
-        for seconds in range(10, 121, 10):
+        # Keep polling forever until video is ready or fails
+        seconds_elapsed = 0
+        while True:
             await asyncio.sleep(10)
+            seconds_elapsed += 10
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -258,9 +262,8 @@ async def make_video(ctx, *, prompt: str = None):
                             await status_msg.edit(content="Video generation failed.")
                             return
 
-            await status_msg.edit(content=f"*Video is still rendering... ({seconds}s elapsed)* ✨")
-
-        await status_msg.edit(content="Video is taking too long. Please try again later.")
+            # Update status every 10 seconds
+            await status_msg.edit(content=f"*Video is still rendering... ({seconds_elapsed}s elapsed)* ✨")
 
     except Exception as e:
         await status_msg.edit(content=f"Video error: {str(e)[:100]}")
@@ -362,7 +365,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Unrestricted Mode (Legal Only)!")
+    print(f"✅ AstraMizu is online as {bot.user} | Video - No Timeout (Sends No Matter What)!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
