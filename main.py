@@ -301,6 +301,5 @@ async def list_features(ctx):
 @bot.event
 async def on_ready():
     print(f"✅ AstraMizu is online as {bot.user} | Full Voice Mode Ready!")
-    bot.loop.create_task(random_yandere_events())
 
 bot.run(os.getenv("DISCORD_TOKEN"))
