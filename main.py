@@ -108,6 +108,64 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# ====================== SONG & SINGER COMMANDS ======================
+
+@bot.command(name="song")
+async def song_command(ctx, *, country: str = None):
+    if not country:
+        await ctx.send("Tell me which country! Example: `!song Japan`")
+        return
+
+    await ctx.send(f"*Searching for the most popular song in {country}...* ✨")
+
+    try:
+        query = f"most popular song in {country} right now 2026"
+        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    abstract = data.get("AbstractText", "")
+
+                    if abstract:
+                        await ctx.send(f"**Most Popular Song in {country}:**
+{abstract}")
+                    else:
+                        await ctx.send(f"Couldn't find current data for {country}. Try a different country!")
+                else:
+                    await ctx.send("Search failed. Try again later.")
+    except:
+        await ctx.send("Something went wrong while searching.")
+
+@bot.command(name="singer")
+async def singer_command(ctx, *, country: str = None):
+    if not country:
+        await ctx.send("Tell me which country! Example: `!singer South Korea`")
+        return
+
+    await ctx.send(f"*Searching for the top singer in {country}...* ✨")
+
+    try:
+        query = f"most popular singer in {country} right now 2026"
+        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    abstract = data.get("AbstractText", "")
+
+                    if abstract:
+                        await ctx.send(f"**Top Singer in {country}:**
+{abstract}")
+                    else:
+                        await ctx.send(f"Couldn't find current data for {country}. Try a different country!")
+                else:
+                    await ctx.send("Search failed. Try again later.")
+    except:
+        await ctx.send("Something went wrong while searching.")
+
 # ====================== ACTION COMMANDS ======================
 
 @bot.command(name="hug")
@@ -196,78 +254,6 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# ====================== VIDEO - NO TIMEOUT (SEND NO MATTER WHAT) ======================
-
-@bot.command(name="video")
-async def make_video(ctx, *, prompt: str = None):
-    if not prompt:
-        await ctx.send("Tell me what video you want~")
-        return
-
-    status_msg = await ctx.send("*Creating your video... this may take a moment~* ✨")
-
-    try:
-        headers = {
-            "Authorization": f"Bearer {os.getenv('XAI_API_KEY')}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "grok-imagine-video",
-            "prompt": prompt,
-            "duration": 5
-        }
-
-        # Start video generation
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api.x.ai/v1/videos/generations",
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=120)
-            ) as resp:
-                if resp.status != 200:
-                    await status_msg.edit(content="Video generation failed to start.")
-                    return
-
-                result = await resp.json()
-                request_id = result.get("id") or result.get("request_id")
-
-                if not request_id:
-                    await status_msg.edit(content="Video generation started but no request ID returned.")
-                    return
-
-        # Keep polling forever until video is ready or fails
-        seconds_elapsed = 0
-        while True:
-            await asyncio.sleep(10)
-            seconds_elapsed += 10
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"https://api.x.ai/v1/videos/generations/{request_id}",
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as poll_resp:
-                    if poll_resp.status == 200:
-                        poll_result = await poll_resp.json()
-                        status = poll_result.get("status", "")
-
-                        if status == "completed":
-                            video_url = poll_result.get("url") or poll_result.get("video", {}).get("url")
-                            if video_url:
-                                await status_msg.edit(content="Your video is ready! ✨")
-                                await ctx.send(video_url)
-                                return
-                        elif status == "failed":
-                            await status_msg.edit(content="Video generation failed.")
-                            return
-
-            # Update status every 10 seconds
-            await status_msg.edit(content=f"*Video is still rendering... ({seconds_elapsed}s elapsed)* ✨")
-
-    except Exception as e:
-        await status_msg.edit(content=f"Video error: {str(e)[:100]}")
-
 # ====================== VOICE ======================
 
 async def send_voice_note(channel, text):
@@ -338,8 +324,8 @@ async def chaos(ctx):
 async def list_features(ctx):
     embed = discord.Embed(title="🌸 AstraMizu Feature List", color=discord.Color.pink())
     embed.add_field(name="Action Commands", value="!hug !kiss !pat !cuddle !slap !date !bite !lick !marry !tackle !poke !blush", inline=False)
-    embed.add_field(name="Image & Video", value="!imagine !video !edit", inline=False)
-    embed.add_field(name="Voice", value="!speak + auto voice notes + speech-to-text", inline=False)
+    embed.add_field(name="Music Commands", value="!song <country> • !singer <country>", inline=False)
+    embed.add_field(name="Image & Voice", value="!imagine !speak", inline=False)
     embed.add_field(name="Games & Fun", value="!rps !guess !8ball !lovemeter !meme !roast !chaos !quiz", inline=False)
     embed.add_field(name="Other", value="!list !confess !poll", inline=False)
     await ctx.send(embed=embed)
@@ -365,7 +351,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Video - No Timeout (Sends No Matter What)!")
+    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Added!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
