@@ -196,7 +196,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# ====================== VIDEO (FIXED - WITH POLLING) ======================
+# ====================== VIDEO WITH LIVE UPDATES ======================
 
 @bot.command(name="video")
 async def make_video(ctx, *, prompt: str = None):
@@ -204,7 +204,7 @@ async def make_video(ctx, *, prompt: str = None):
         await ctx.send("Tell me what video you want~")
         return
 
-    await ctx.send("*Creating your video... this may take a moment~* ✨")
+    status_msg = await ctx.send("*Creating your video... this may take a moment~* ✨")
 
     try:
         headers = {
@@ -217,8 +217,8 @@ async def make_video(ctx, *, prompt: str = None):
             "duration": 5
         }
 
+        # Start video generation
         async with aiohttp.ClientSession() as session:
-            # Step 1: Start video generation
             async with session.post(
                 "https://api.x.ai/v1/videos/generations",
                 json=payload,
@@ -226,19 +226,19 @@ async def make_video(ctx, *, prompt: str = None):
                 timeout=aiohttp.ClientTimeout(total=120)
             ) as resp:
                 if resp.status != 200:
-                    await ctx.send("Video generation failed to start.")
+                    await status_msg.edit(content="Video generation failed to start.")
                     return
 
                 result = await resp.json()
                 request_id = result.get("id") or result.get("request_id")
 
                 if not request_id:
-                    await ctx.send("Video generation started but no request ID returned.")
+                    await status_msg.edit(content="Video generation started but no request ID returned.")
                     return
 
-        # Step 2: Poll for the video (check every 5 seconds, up to 2 minutes)
-        for _ in range(24):  # 24 * 5 seconds = 2 minutes max
-            await asyncio.sleep(5)
+        # Poll with live updates every 10 seconds
+        for seconds in range(10, 121, 10):  # 10s, 20s, 30s ... up to 120s
+            await asyncio.sleep(10)
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -253,16 +253,20 @@ async def make_video(ctx, *, prompt: str = None):
                         if status == "completed":
                             video_url = poll_result.get("url") or poll_result.get("video", {}).get("url")
                             if video_url:
+                                await status_msg.edit(content="Your video is ready! ✨")
                                 await ctx.send(video_url)
                                 return
                         elif status == "failed":
-                            await ctx.send("Video generation failed.")
+                            await status_msg.edit(content="Video generation failed.")
                             return
 
-        await ctx.send("Video is taking too long to render. Please try again later.")
+            # Send update every 10 seconds
+            await status_msg.edit(content=f"*Video is still rendering... ({seconds}s elapsed)* ✨")
+
+        await status_msg.edit(content="Video is taking too long. Please try again later.")
 
     except Exception as e:
-        await ctx.send(f"Video error: {str(e)[:100]}")
+        await status_msg.edit(content=f"Video error: {str(e)[:100]}")
 
 # ====================== VOICE ======================
 
@@ -361,7 +365,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Video Fixed with Polling!")
+    print(f"✅ AstraMizu is online as {bot.user} | Video with Live Updates!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
