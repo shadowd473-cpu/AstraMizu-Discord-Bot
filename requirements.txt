@@ -1,8 +1,9 @@
-discord.py
+discord.py[voice]
 openai
 aiohttp
 chromadb
 sentence-transformers
 flask
 deepgram-sdk==3.4.0
+davey
 PyNaCl
