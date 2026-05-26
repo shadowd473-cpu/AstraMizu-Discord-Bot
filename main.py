@@ -108,7 +108,7 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ====================== SONG & SINGER COMMANDS ======================
+# ====================== SONG & SINGER COMMANDS (FIXED) ======================
 
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
@@ -171,7 +171,7 @@ async def singer_command(ctx, *, country: str = None):
 @bot.command(name="hug")
 async def hug(ctx, member: discord.Member = None):
     target = member or ctx.author
-    await ctx.send(f"**{ctx.author.mention}** hugs **{target.mention}**! 💖")
+    await ctx.send(f"**{ctx.author.mention}** hugs **{target.mention}**! ❤️")
     await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
 @bot.command(name="kiss")
@@ -351,7 +351,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Added!")
+    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Fixed!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
