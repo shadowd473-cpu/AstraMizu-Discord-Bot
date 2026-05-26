@@ -278,7 +278,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# VOICE (unchanged)
+# VOICE - Improved with better error messages
 async def send_voice_note(channel, text):
     try:
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
@@ -288,13 +288,15 @@ async def send_voice_note(channel, text):
                 if resp.status == 200:
                     audio_bytes = await resp.read()
                     await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
-    except:
-        pass
+                else:
+                    await channel.send("Sorry, voice is having a little trouble right now~ Try again later!")
+    except Exception as e:
+        await channel.send(f"Voice failed: {str(e)[:80]}")
 
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
     if not text:
-        await ctx.send("What would you like me to say?")
+        await ctx.send("What would you like me to say? Example: `!speak Hello Papa~`")
         return
     await send_voice_note(ctx.channel, text)
 
@@ -369,7 +371,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Music commands now short & clean!")
+    print(f"✅ AstraMizu is online as {bot.user} | Text-to-Speech is back and improved!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
