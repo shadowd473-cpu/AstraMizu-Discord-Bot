@@ -108,7 +108,7 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ====================== SONG & SINGER COMMANDS (FIXED) ======================
+# ====================== SONG & SINGER COMMANDS (CLEAN VERSION) ======================
 
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
@@ -129,8 +129,7 @@ async def song_command(ctx, *, country: str = None):
                     abstract = data.get("AbstractText", "")
 
                     if abstract:
-                        await ctx.send(f"**Most Popular Song in {country}:**
-{abstract}")
+                        await ctx.send(f"**Most Popular Song in {country}:**\n{abstract}")
                     else:
                         await ctx.send(f"Couldn't find current data for {country}. Try a different country!")
                 else:
@@ -157,8 +156,7 @@ async def singer_command(ctx, *, country: str = None):
                     abstract = data.get("AbstractText", "")
 
                     if abstract:
-                        await ctx.send(f"**Top Singer in {country}:**
-{abstract}")
+                        await ctx.send(f"**Top Singer in {country}:**\n{abstract}")
                     else:
                         await ctx.send(f"Couldn't find current data for {country}. Try a different country!")
                 else:
@@ -351,7 +349,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Fixed!")
+    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Working!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
