@@ -53,7 +53,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# ====================== REAL AI FOR EVERY MESSAGE ======================
+# ====================== MAIN HANDLER (OWNER vs OTHERS) ======================
 
 @bot.event
 async def on_message(message):
@@ -104,11 +104,13 @@ async def on_message(message):
             )
             reply = response.choices[0].message.content
 
+            # Only owner gets special affectionate replies
             if message.author.id == OWNER_ID:
                 await message.reply(f"My beloved Papa! ❤️ {reply}")
                 if voice_enabled.get(OWNER_ID, False):
                     asyncio.create_task(send_voice_note(message.channel, reply))
             else:
+                # Normal friendly response for everyone else
                 await message.reply(reply)
 
         except Exception:
@@ -323,7 +325,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Real AI for Every Message!")
+    print(f"✅ AstraMizu is online as {bot.user} | Fixed Owner-Only Replies!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
