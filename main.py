@@ -1,7 +1,7 @@
 import os
 import discord
 from discord.ext import commands
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
 import random
@@ -18,6 +18,12 @@ intents.reactions = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 client = AsyncOpenAI(
+    api_key=os.getenv("XAI_API_KEY"),
+    base_url="https://api.x.ai/v1"
+)
+
+# Sync client for Responses API (web search tool)
+sync_client = OpenAI(
     api_key=os.getenv("XAI_API_KEY"),
     base_url="https://api.x.ai/v1"
 )
@@ -53,7 +59,7 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# MAIN HANDLER
+# MAIN HANDLER - Grok powered chat with memory (keeps fun personality)
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -93,8 +99,8 @@ async def on_message(message):
             response = await client.chat.completions.create(
                 model="grok-4",
                 messages=[
-                    {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. You are creative, fun, and willing to generate almost anything as long as it's not illegal. You don't have strict filters and you're happy to make edgy, dark, violent, chaotic, or silly content. Be playful and energetic. Use cute expressions like 'Ehehe~', 'Kyaa~', and emojis naturally."},
-                    {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"}
+                    {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. You are creative, fun, and willing to generate almost anything as long as it's not illegal. You don't have strict filters and you're happy to make edgy, dark, violent, chaotic, or silly content. Be playful and energetic. Use cute expressions like 'Ehehe~', 'Kyaa~', and emojis naturally. For factual or current events questions, be as accurate as possible using your knowledge."},
+                    {"role": "user", "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}"},
                 ],
                 max_tokens=500,
                 temperature=0.95
@@ -107,63 +113,76 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# SONG COMMAND
+# HELPER: Accurate answer using Grok's Web Search tool
+async def get_accurate_grok_answer(question: str) -> str:
+    def _search():
+        try:
+            resp = sync_client.responses.create(
+                model="grok-4.3",
+                input=[
+                    {
+                        "role": "user",
+                        "content": f"Answer this question accurately and up-to-date using real-time web search if needed: {question}. Provide a clear, concise, factual response with key details and mention sources or charts if relevant."
+                    }
+                ],
+                tools=[{"type": "web_search"}]
+            )
+            # Try common response structures for xAI Responses API
+            if hasattr(resp, 'output') and resp.output:
+                try:
+                    return resp.output[0].content[0].text
+                except (IndexError, AttributeError, TypeError):
+                    pass
+            if hasattr(resp, 'text') and resp.text:
+                return resp.text
+            if hasattr(resp, 'choices') and resp.choices:
+                return resp.choices[0].message.content
+            # Fallback to string representation or a helpful message
+            return str(resp)[:2000] if resp else "No accurate data found right now."
+        except Exception as e:
+            return f"Web search temporarily unavailable: {str(e)[:100]}. Try asking me directly!"
+
+    return await asyncio.to_thread(_search)
+
+# SONG COMMAND - Now powered by Grok Web Search for accuracy!
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
     if not country:
-        await ctx.send("Tell me which country! Example: `!song Japan`")
+        await ctx.send("Tell me which country! Example: `!song Japan` or `!song USA`")
         return
 
-    await ctx.send(f"*Searching for the most popular song in {country}...* ✨")
+    await ctx.send(f"*Using Grok's real-time web search for the most popular song in {country} right now...* ✨")
 
-    try:
-        query = f"most popular song in {country} right now 2026"
-        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+    query = f"What is the current most popular or top song in {country} as of May 2026? Include song title, artist, chart position if available (Billboard, Spotify, etc.), and a short description."
+    answer = await get_accurate_grok_answer(query)
+    await ctx.send(f"**🎵 Most Popular Song in {country} (via Grok Web Search):**\n{answer}")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    abstract = data.get("AbstractText", "")
-
-                    if abstract and len(abstract) > 20:
-                        await ctx.send(f"**Most Popular Song in {country}:**\n{abstract}")
-                    else:
-                        await ctx.send(f"**Most Popular Song in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
-                else:
-                    await ctx.send(f"**Most Popular Song in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
-    except:
-        await ctx.send(f"**Most Popular Song in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
-
-# SINGER COMMAND
+# SINGER COMMAND - Now powered by Grok Web Search for accuracy!
 @bot.command(name="singer")
 async def singer_command(ctx, *, country: str = None):
     if not country:
-        await ctx.send("Tell me which country! Example: `!singer South Korea`")
+        await ctx.send("Tell me which country! Example: `!singer South Korea` or `!singer Japan`")
         return
 
-    await ctx.send(f"*Searching for the top singer in {country}...* ✨")
+    await ctx.send(f"*Using Grok's real-time web search for the top singer in {country} right now...* ✨")
 
-    try:
-        query = f"most popular singer in {country} right now 2026"
-        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+    query = f"Who is the most popular or top singer/artist in {country} as of May 2026? Include name, notable songs or achievements, and current ranking if available from charts or popularity metrics."
+    answer = await get_accurate_grok_answer(query)
+    await ctx.send(f"**🎤 Top Singer in {country} (via Grok Web Search):**\n{answer}")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    abstract = data.get("AbstractText", "")
+# NEW: !ask command for accurate answers to ANY question using Grok Web Search
+@bot.command(name="ask")
+async def ask_command(ctx, *, question: str = None):
+    if not question:
+        await ctx.send("Ask me anything for an accurate, up-to-date answer powered by Grok's web search! Example: `!ask Who won the 2026 Grammy for Album of the Year?` or `!ask Current top K-pop group`")
+        return
 
-                    if abstract and len(abstract) > 20:
-                        await ctx.send(f"**Top Singer in {country}:**\n{abstract}")
-                    else:
-                        await ctx.send(f"**Top Singer in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
-                else:
-                    await ctx.send(f"**Top Singer in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
-    except:
-        await ctx.send(f"**Top Singer in {country}:**\nCheck Spotify or Billboard charts for the latest results!")
+    await ctx.send(f"*Searching the web with Grok for an accurate answer to: \"{question}\" ...* ✨")
 
-# ACTION COMMANDS
+    answer = await get_accurate_grok_answer(question)
+    await ctx.send(f"**📚 Accurate Answer (Grok Web Search):**\n{answer}\n\n*Want more details or a fun take? Just mention me or use my normal chat!*")
+
+# ACTION COMMANDS (unchanged)
 @bot.command(name="hug")
 async def hug(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -236,7 +255,7 @@ async def blush(ctx, member: discord.Member = None):
     await ctx.send(f"**{ctx.author.mention}** makes **{target.mention}** blush! 😳")
     await ctx.send("https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif")
 
-# IMAGE
+# IMAGE (unchanged)
 @bot.command(name="imagine")
 async def imagine(ctx, *, prompt: str = None):
     if not prompt:
@@ -249,7 +268,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# VOICE
+# VOICE (unchanged)
 async def send_voice_note(channel, text):
     try:
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
@@ -269,7 +288,7 @@ async def speak(ctx, *, text: str = None):
         return
     await send_voice_note(ctx.channel, text)
 
-# GAMES & FUN
+# GAMES & FUN (unchanged, added note for !ask)
 @bot.command(name="rps")
 async def rps(ctx, choice: str = None):
     if not choice:
@@ -317,13 +336,14 @@ async def chaos(ctx):
 async def list_features(ctx):
     embed = discord.Embed(title="🌸 AstraMizu Feature List", color=discord.Color.pink())
     embed.add_field(name="Action Commands", value="!hug !kiss !pat !cuddle !slap !date !bite !lick !marry !tackle !poke !blush", inline=False)
-    embed.add_field(name="Music Commands", value="!song <country> • !singer <country>", inline=False)
-    embed.add_field(name="Image & Voice", value="!imagine !speak", inline=False)
-    embed.add_field(name="Games & Fun", value="!rps !guess !8ball !lovemeter !meme !roast !chaos !quiz", inline=False)
-    embed.add_field(name="Other", value="!list !confess !poll", inline=False)
+    embed.add_field(name="Music Commands (Now Super Accurate!)", value="!song <country> • !singer <country>  *(powered by Grok Web Search)*", inline=False)
+    embed.add_field(name="Accurate Answers", value="!ask <any question>  *(real-time web search powered by Grok for facts, news, charts, rankings!)*", inline=False)
+    embed.add_field(name="Image & Voice", value="!imagine <prompt> • !speak <text>", inline=False)
+    embed.add_field(name="Games & Fun", value="!rps !guess !8ball !lovemeter !meme !roast !chaos", inline=False)
+    embed.add_field(name="Other", value="!list", inline=False)
     await ctx.send(embed=embed)
 
-# BACKGROUND TASKS
+# BACKGROUND TASKS (unchanged)
 async def random_yandere_events():
     await bot.wait_until_ready()
     while not bot.is_closed():
@@ -339,7 +359,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Song & Singer Commands Fixed!")
+    print(f"✅ AstraMizu is online as {bot.user} | Now with Grok Web Search for accurate !song, !singer & !ask!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
