@@ -278,7 +278,7 @@ async def imagine(ctx, *, prompt: str = None):
         except:
             await ctx.send("The stars are cloudy today...")
 
-# VOICE - Improved with better error messages
+# VOICE - Now sends as proper Discord Voice Message (waveform style)
 async def send_voice_note(channel, text):
     try:
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
@@ -287,7 +287,8 @@ async def send_voice_note(channel, text):
             async with session.post("https://api.x.ai/v1/tts", json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status == 200:
                     audio_bytes = await resp.read()
-                    await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
+                    file = discord.File(io.BytesIO(audio_bytes), filename="voice.mp3")
+                    await channel.send(file=file, voice_message=True)  # Proper voice message
                 else:
                     await channel.send("Sorry, voice is having a little trouble right now~ Try again later!")
     except Exception as e:
@@ -371,7 +372,7 @@ async def random_yandere_events():
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Text-to-Speech is back and improved!")
+    print(f"✅ AstraMizu is online as {bot.user} | Now sends proper voice messages!")
     bot.loop.create_task(random_yandere_events())
 
 # Run the bot
