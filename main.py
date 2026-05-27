@@ -46,9 +46,6 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 voice_clients = {}
 listening_tasks = {}
 
-def create_silent_audio_source():
-    return discord.FFmpegPCMAudio(io.BytesIO(b'\x00' * 48000), pipe=True)
-
 # REACTION SYSTEM
 REACTION_RESPONSES = {
     "❤️": ["Aww~ Thank you! That makes me happy! 💖", "Ehehe~ You're sweet! ❤️"],
@@ -126,11 +123,18 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# VOICE CONVERSATION SYSTEM
+# VOICE CONVERSATION SYSTEM - STABLE VERSION
 async def keep_alive(vc):
+    """Simple keep-alive that plays silent audio periodically"""
     try:
-        source = create_silent_audio_source()
-        vc.play(source, after=lambda e: asyncio.create_task(keep_alive(vc)))
+        # Play a very short silent audio (0.5 seconds)
+        silent = io.BytesIO(b'\x00' * 24000)
+        source = discord.FFmpegPCMAudio(silent, pipe=True)
+        vc.play(source)
+        # Schedule next keep-alive in 30 seconds
+        await asyncio.sleep(30)
+        if vc.is_connected():
+            asyncio.create_task(keep_alive(vc))
     except:
         pass
 
@@ -169,7 +173,7 @@ async def start_listening(vc, text_channel):
         dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
 
-        # Use discord.ext.voice_recv.AudioSink (reliable)
+        # Audio sink
         class DeepgramAudioSink(voice_recv.AudioSink):
             def __init__(self, dg_conn):
                 self.dg_conn = dg_conn
@@ -226,7 +230,8 @@ async def join_vc(ctx):
 
         await ctx.send(f"Joined {voice_channel.name}! I'm now listening~ ✨")
 
-        await keep_alive(vc)
+        # Start keep-alive (non-recursive to avoid disconnect loops)
+        asyncio.create_task(keep_alive(vc))
         await start_listening(vc, ctx.channel)
 
     except Exception as e:
