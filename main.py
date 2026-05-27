@@ -169,22 +169,25 @@ async def start_listening(vc, text_channel):
         dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
 
-        # Use discord.AudioSink (available in discord.py[voice])
-        class DeepgramAudioSink(discord.AudioSink):
-            def __init__(self, dg_conn):
-                self.dg_conn = dg_conn
+        # Try to use AudioSink, but don't crash if not available
+        try:
+            class DeepgramAudioSink(discord.AudioSink):
+                def __init__(self, dg_conn):
+                    self.dg_conn = dg_conn
 
-            def write(self, data):
-                try:
-                    self.dg_conn.send(data)
-                except:
+                def write(self, data):
+                    try:
+                        self.dg_conn.send(data)
+                    except:
+                        pass
+
+                def cleanup(self):
                     pass
 
-            def cleanup(self):
-                pass
-
-        sink = DeepgramAudioSink(dg_connection)
-        vc.listen(sink)
+            sink = DeepgramAudioSink(dg_connection)
+            vc.listen(sink)
+        except AttributeError:
+            await text_channel.send("Note: Full voice listening not available in this environment (AudioSink missing). Bot will stay in VC but won't hear you.")
 
     except Exception as e:
         await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
