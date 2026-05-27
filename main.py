@@ -1,6 +1,6 @@
 import os
 import discord
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
@@ -169,8 +169,8 @@ async def start_listening(vc, text_channel):
         dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
 
-        # Proper audio sink using discord.ext.voice_recv
-        class DeepgramAudioSink(voice_recv.AudioSink):
+        # Use discord.AudioSink (available in discord.py[voice])
+        class DeepgramAudioSink(discord.AudioSink):
             def __init__(self, dg_conn):
                 self.dg_conn = dg_conn
 
