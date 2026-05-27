@@ -1,4 +1,4 @@
-port os
+import os
 import discord
 from discord.ext import commands
 from openai import AsyncOpenAI, OpenAI
