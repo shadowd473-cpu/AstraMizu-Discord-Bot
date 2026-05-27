@@ -164,8 +164,8 @@ async def start_listening(vc, text_channel):
             vad_events=True
         )
 
-        # Use create_task to avoid await issues
-        asyncio.create_task(dg_connection.start(options))
+        # Just call start() - it handles everything internally
+        dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
 
     except Exception as e:
