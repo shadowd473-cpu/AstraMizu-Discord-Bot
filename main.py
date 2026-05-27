@@ -1,6 +1,6 @@
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, voice_recv
 from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
@@ -169,25 +169,22 @@ async def start_listening(vc, text_channel):
         dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
 
-        # Try to use AudioSink, but don't crash if not available
-        try:
-            class DeepgramAudioSink(discord.AudioSink):
-                def __init__(self, dg_conn):
-                    self.dg_conn = dg_conn
+        # Use discord.ext.voice_recv.AudioSink (reliable)
+        class DeepgramAudioSink(voice_recv.AudioSink):
+            def __init__(self, dg_conn):
+                self.dg_conn = dg_conn
 
-                def write(self, data):
-                    try:
-                        self.dg_conn.send(data)
-                    except:
-                        pass
-
-                def cleanup(self):
+            def write(self, data):
+                try:
+                    self.dg_conn.send(data)
+                except:
                     pass
 
-            sink = DeepgramAudioSink(dg_connection)
-            vc.listen(sink)
-        except AttributeError:
-            await text_channel.send("Note: Full voice listening not available in this environment (AudioSink missing). Bot will stay in VC but won't hear you.")
+            def cleanup(self):
+                pass
+
+        sink = DeepgramAudioSink(dg_connection)
+        vc.listen(sink)
 
     except Exception as e:
         await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
