@@ -1,6 +1,7 @@
 import os
 import discord
 from discord.ext import commands
+from discord.ext import voice_recv
 from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
@@ -45,6 +46,7 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 # Voice state
 voice_clients = {}
 listening_tasks = {}
+listen_channels = {}  # guild_id -> text channel to send responses to
 
 # Shared aiohttp session
 _http_session = None
@@ -148,7 +150,7 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# KEEP-ALIVE — no audio, no FFmpeg needed, just holds the connection open
+# KEEP-ALIVE
 async def keep_alive(vc):
     while True:
         await asyncio.sleep(10)
@@ -168,7 +170,7 @@ async def join_vc(ctx):
         return
 
     try:
-        vc = await voice_channel.connect(self_deaf=True)
+        vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, self_deaf=False)
         voice_clients[ctx.guild.id] = vc
         await ctx.send(f"Joined {voice_channel.name}! ✨")
         asyncio.create_task(keep_alive(vc))
@@ -188,10 +190,13 @@ async def leave_vc(ctx):
 
         if ctx.guild.id in listening_tasks:
             try:
-                await listening_tasks[ctx.guild.id].finish()
+                listening_tasks[ctx.guild.id].cancel()
             except:
                 pass
             del listening_tasks[ctx.guild.id]
+
+        if ctx.guild.id in listen_channels:
+            del listen_channels[ctx.guild.id]
 
         del voice_clients[ctx.guild.id]
         await ctx.send("Left the voice channel. See you later~ 👋")
@@ -206,45 +211,100 @@ async def start_listen(ctx):
         return
 
     vc = voice_clients[ctx.guild.id]
+    listen_channels[ctx.guild.id] = ctx.channel
+
+    # Connect to Deepgram live transcription
+    dg_connection = deepgram.listen.live.v("1")
+    is_speaking = {}  # track per-user silence
+
+    async def handle_transcript(result, **kwargs):
+        try:
+            transcript = result.channel.alternatives[0].transcript
+            if not transcript or len(transcript.strip()) < 3:
+                return
+            if not result.is_final:
+                return
+
+            print(f"Transcript: {transcript}")
+
+            # Get Grok reply
+            grok_response = await client.chat.completions.create(
+                model="grok-4",
+                messages=[
+                    {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. Keep responses short and natural for voice conversation. 1-2 sentences max."},
+                    {"role": "user", "content": transcript}
+                ],
+                max_tokens=150,
+                temperature=0.9
+            )
+            reply = grok_response.choices[0].message.content
+            print(f"Reply: {reply}")
+
+            # Speak reply in VC
+            await speak_in_voice_channel(vc, reply)
+
+        except Exception as e:
+            print(f"Transcript handler error: {e}")
+
+    dg_connection.on(LiveTranscriptionEvents.Transcript, handle_transcript)
+
+    options = LiveOptions(
+        model="nova-2",
+        language="en-US",
+        smart_format=True,
+        interim_results=False,
+        endpointing=500,
+        encoding="linear16",
+        sample_rate=48000,
+        channels=2,
+    )
+
+    dg_connection.start(options)
+
+    # Sink that pipes Discord audio into Deepgram
+    class DeepgramSink(voice_recv.AudioSink):
+        def __init__(self, dg_conn):
+            self.dg_conn = dg_conn
+
+        def wants_opus(self):
+            return False  # we want PCM
+
+        def write(self, user, data):
+            try:
+                self.dg_conn.send(data.pcm)
+            except Exception as e:
+                print(f"Deepgram send error: {e}")
+
+        def cleanup(self):
+            pass
+
+    sink = DeepgramSink(dg_connection)
+    vc.listen(sink)
+
+    listening_tasks[ctx.guild.id] = dg_connection
+    await ctx.send("Listening! Speak and I'll respond~ 🎤")
+
+@bot.command(name="stoplisten")
+async def stop_listen(ctx):
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+
+    vc = voice_clients[ctx.guild.id]
 
     try:
-        dg_connection = deepgram.listen.live.v("1")
+        vc.stop_listening()
+    except:
+        pass
 
-        async def on_transcript(result, **kwargs):
-            transcript = result.channel.alternatives[0].transcript
-            if transcript and len(transcript.strip()) > 3:
-                try:
-                    grok_response = await client.chat.completions.create(
-                        model="grok-4",
-                        messages=[
-                            {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. Keep responses short and natural for voice conversation."},
-                            {"role": "user", "content": transcript}
-                        ],
-                        max_tokens=300,
-                        temperature=0.9
-                    )
-                    reply = grok_response.choices[0].message.content
-                    await speak_in_voice_channel(vc, reply)
-                except Exception as e:
-                    print(f"Grok error: {e}")
+    if ctx.guild.id in listening_tasks:
+        try:
+            listening_tasks[ctx.guild.id].finish()
+        except:
+            pass
+        del listening_tasks[ctx.guild.id]
 
-        dg_connection.on(LiveTranscriptionEvents.Transcript, on_transcript)
-
-        options = LiveOptions(
-            model="nova-2",
-            language="en-US",
-            smart_format=True,
-            interim_results=True,
-            vad_events=True
-        )
-
-        dg_connection.start(options)
-        listening_tasks[ctx.guild.id] = dg_connection
-
-        await ctx.send("Listening mode activated! Speak now~ 🎤")
-
-    except Exception as e:
-        await ctx.send(f"Listening failed: {str(e)[:100]}")
+    await ctx.send("Stopped listening~ 🔇")
 
 async def speak_in_voice_channel(vc, text):
     try:
@@ -262,10 +322,15 @@ async def speak_in_voice_channel(vc, text):
                 audio_bytes = await resp.read()
                 with open("temp_voice.mp3", "wb") as f:
                     f.write(audio_bytes)
+
+                # Wait if already playing
+                while vc.is_playing():
+                    await asyncio.sleep(0.5)
+
                 source = discord.FFmpegPCMAudio("temp_voice.mp3")
-                if vc.is_playing():
-                    vc.stop()
                 vc.play(source)
+            else:
+                print(f"TTS failed with status {resp.status}: {await resp.text()}")
     except Exception as e:
         print(f"TTS in VC failed: {e}")
 
@@ -331,13 +396,13 @@ async def get_accurate_grok_answer(question: str, short: bool = False):
 @bot.command(name="list")
 async def list_features(ctx):
     embed = discord.Embed(title="🌸 AstraMizu Feature List", color=discord.Color.pink())
-    embed.add_field(name="Voice Commands", value="!join • !leave • !listen • !speak", inline=False)
-    embed.add_field(name="Music & Info", value="!song <country> • !singer <country> • !ask <question>", inline=False)
+    embed.add_field(name="Voice Commands", value="!join • !leave • !listen • !stoplisten • !speak", inline=False)
+    embed.add_field(name="Music & Info", value="!song <country> • !singer <country>", inline=False)
     embed.add_field(name="Fun Commands", value="!hug !kiss !imagine and more!", inline=False)
     await ctx.send(embed=embed)
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Stable Voice Mode Ready!")
+    print(f"✅ AstraMizu is online as {bot.user} | Voice Ready!")
 
 bot.run(os.getenv("DISCORD_TOKEN"))
