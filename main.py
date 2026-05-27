@@ -1,6 +1,6 @@
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, voice_recv
 from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
@@ -47,7 +47,6 @@ voice_clients = {}
 listening_tasks = {}
 
 def create_silent_audio_source():
-    """Create a silent audio source to keep the bot in VC"""
     return discord.FFmpegPCMAudio(io.BytesIO(b'\x00' * 48000), pipe=True)
 
 # REACTION SYSTEM
@@ -136,7 +135,6 @@ async def keep_alive(vc):
         pass
 
 async def start_listening(vc, text_channel):
-    """Start Deepgram listening + feed Discord audio to it"""
     try:
         dg_connection = deepgram.listen.live.v("1")
 
@@ -171,14 +169,12 @@ async def start_listening(vc, text_channel):
         dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
 
-        # Start feeding Discord audio to Deepgram
-        # Use a simple audio sink that sends audio to Deepgram
-        class DeepgramAudioSink(discord.AudioSink):
+        # Proper audio sink using discord.ext.voice_recv
+        class DeepgramAudioSink(voice_recv.AudioSink):
             def __init__(self, dg_conn):
                 self.dg_conn = dg_conn
 
             def write(self, data):
-                # Send raw audio to Deepgram
                 try:
                     self.dg_conn.send(data)
                 except:
