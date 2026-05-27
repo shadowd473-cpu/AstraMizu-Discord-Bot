@@ -8,7 +8,7 @@ import random
 import asyncio
 import aiohttp
 import io
-import struct
+import yt_dlp
 from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
 
 intents = discord.Intents.default()
@@ -21,11 +21,6 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 client = AsyncOpenAI(
-    api_key=os.getenv("XAI_API_KEY"),
-    base_url="https://api.x.ai/v1"
-)
-
-sync_client = OpenAI(
     api_key=os.getenv("XAI_API_KEY"),
     base_url="https://api.x.ai/v1"
 )
@@ -45,8 +40,7 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 
 # Voice state
 voice_clients = {}
-listening_tasks = {}
-listen_channels = {}
+music_queues = {}  # guild_id -> list of (url, title)
 
 # Shared aiohttp session
 _http_session = None
@@ -56,6 +50,52 @@ async def get_http_session():
     if _http_session is None or _http_session.closed:
         _http_session = aiohttp.ClientSession()
     return _http_session
+
+YTDL_OPTIONS = {
+    "format": "bestaudio/best",
+    "noplaylist": True,
+    "quiet": True,
+    "no_warnings": True,
+    "default_search": "ytsearch",
+    "source_address": "0.0.0.0",
+}
+
+FFMPEG_OPTIONS = {
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+    "options": "-vn",
+}
+
+def search_youtube(query):
+    with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
+        try:
+            if query.startswith("http"):
+                info = ydl.extract_info(query, download=False)
+            else:
+                info = ydl.extract_info(f"ytsearch:{query}", download=False)
+                info = info["entries"][0]
+            return info["url"], info.get("title", "Unknown")
+        except Exception as e:
+            print(f"yt-dlp error: {e}")
+            return None, None
+
+async def play_next(guild_id):
+    if guild_id not in voice_clients:
+        return
+    vc = voice_clients[guild_id]
+    if not vc.is_connected():
+        return
+    if guild_id not in music_queues or not music_queues[guild_id]:
+        return
+
+    url, title = music_queues[guild_id].pop(0)
+
+    def after_playing(error):
+        if error:
+            print(f"Player error: {error}")
+        asyncio.run_coroutine_threadsafe(play_next(guild_id), bot.loop)
+
+    source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
+    vc.play(discord.PCMVolumeTransformer(source, volume=0.5), after=after_playing)
 
 # REACTION SYSTEM
 REACTION_RESPONSES = {
@@ -155,32 +195,6 @@ async def keep_alive(vc):
         if not vc.is_connected() or vc.guild.id not in voice_clients:
             break
 
-# Custom AudioSink that streams PCM to Deepgram
-class DeepgramSink(discord.sinks.Sink):
-    def __init__(self, dg_connection, loop):
-        super().__init__()
-        self.dg_connection = dg_connection
-        self.loop = loop
-
-    def write(self, data, user):
-        try:
-            if user is None:
-                return
-            asyncio.run_coroutine_threadsafe(
-                self._send(data), self.loop
-            )
-        except Exception as e:
-            print(f"Sink write error: {e}")
-
-    async def _send(self, data):
-        try:
-            self.dg_connection.send(data)
-        except Exception as e:
-            print(f"Deepgram send error: {e}")
-
-    def cleanup(self):
-        pass
-
 @bot.command(name="join")
 async def join_vc(ctx):
     if ctx.author.voice is None:
@@ -194,9 +208,9 @@ async def join_vc(ctx):
         return
 
     try:
-        vc = await voice_channel.connect(self_deaf=True)
+        vc = await voice_channel.connect(self_deaf=False)
         voice_clients[ctx.guild.id] = vc
-        await ctx.send(f"Joined {voice_channel.name}! ✨ Use !listen to activate voice chat.")
+        await ctx.send(f"Joined {voice_channel.name}! ✨")
         asyncio.create_task(keep_alive(vc))
     except Exception as e:
         await ctx.send(f"Failed to join: {str(e)[:100]}")
@@ -209,144 +223,119 @@ async def leave_vc(ctx):
 
     try:
         vc = voice_clients[ctx.guild.id]
-
-        if ctx.guild.id in listening_tasks:
-            try:
-                vc.stop_recording()
-            except:
-                pass
-            try:
-                listening_tasks[ctx.guild.id].finish()
-            except:
-                pass
-            del listening_tasks[ctx.guild.id]
-
         if vc.is_connected():
             await vc.disconnect()
-
-        if ctx.guild.id in listen_channels:
-            del listen_channels[ctx.guild.id]
-
+        music_queues.pop(ctx.guild.id, None)
         del voice_clients[ctx.guild.id]
         await ctx.send("Left the voice channel. See you later~ 👋")
-
     except Exception as e:
         await ctx.send(f"Error leaving: {str(e)[:100]}")
 
-@bot.command(name="listen")
-async def start_listen(ctx):
-    if ctx.guild.id not in voice_clients:
-        await ctx.send("Use !join first!")
+@bot.command(name="play")
+async def play(ctx, *, query: str = None):
+    if not query:
+        await ctx.send("Give me a song name or YouTube URL!")
         return
 
+    if ctx.author.voice is None:
+        await ctx.send("Join a voice channel first!")
+        return
+
+    if ctx.guild.id not in voice_clients:
+        vc = await ctx.author.voice.channel.connect(self_deaf=False)
+        voice_clients[ctx.guild.id] = vc
+        asyncio.create_task(keep_alive(vc))
+
     vc = voice_clients[ctx.guild.id]
-    listen_channels[ctx.guild.id] = ctx.channel
 
-    try:
-        dg_connection = deepgram.listen.live.v("1")
+    await ctx.send(f"🔍 Searching for `{query}`...")
 
-        async def handle_transcript(result, **kwargs):
-            try:
-                transcript = result.channel.alternatives[0].transcript
-                if not transcript or len(transcript.strip()) < 3:
-                    return
-                if not result.is_final:
-                    return
+    url, title = await asyncio.to_thread(search_youtube, query)
+    if not url:
+        await ctx.send("Couldn't find that song, sorry~ 😢")
+        return
 
-                print(f"Heard: {transcript}")
+    if ctx.guild.id not in music_queues:
+        music_queues[ctx.guild.id] = []
 
-                grok_response = await client.chat.completions.create(
-                    model="grok-4",
-                    messages=[
-                        {"role": "system", "content": "You are AstraMizu, a cheerful and playful anime girl. Keep responses short and natural for voice. 1-2 sentences max."},
-                        {"role": "user", "content": transcript}
-                    ],
-                    max_tokens=150,
-                    temperature=0.9
-                )
-                reply = grok_response.choices[0].message.content
-                print(f"Replying: {reply}")
-                await speak_in_voice_channel(vc, reply)
+    if vc.is_playing():
+        music_queues[ctx.guild.id].append((url, title))
+        await ctx.send(f"➕ Added to queue: **{title}**")
+    else:
+        music_queues[ctx.guild.id].insert(0, (url, title))
+        await play_next(ctx.guild.id)
+        await ctx.send(f"🎵 Now playing: **{title}**")
 
-            except Exception as e:
-                print(f"Transcript error: {e}")
-
-        dg_connection.on(LiveTranscriptionEvents.Transcript, handle_transcript)
-
-        options = LiveOptions(
-            model="nova-2",
-            language="en-US",
-            smart_format=True,
-            interim_results=False,
-            endpointing=500,
-            encoding="linear16",
-            sample_rate=48000,
-            channels=2,
-        )
-
-        dg_connection.start(options)
-
-        loop = asyncio.get_event_loop()
-        sink = DeepgramSink(dg_connection, loop)
-
-        async def recording_done(sink, channel, *args):
-            pass
-
-        vc.start_recording(sink, recording_done, ctx.channel)
-        listening_tasks[ctx.guild.id] = dg_connection
-
-        await ctx.send("Listening! Speak and I'll respond~ 🎤")
-
-    except Exception as e:
-        print(f"Listen error: {e}")
-        await ctx.send(f"Listening failed: {str(e)[:100]}")
-
-@bot.command(name="stoplisten")
-async def stop_listen(ctx):
+@bot.command(name="skip")
+async def skip(ctx):
     if ctx.guild.id not in voice_clients:
         await ctx.send("I'm not in a voice channel!")
         return
-
     vc = voice_clients[ctx.guild.id]
+    if vc.is_playing():
+        vc.stop()
+        await ctx.send("⏭️ Skipped!")
+    else:
+        await ctx.send("Nothing is playing right now.")
 
-    try:
-        vc.stop_recording()
-    except:
-        pass
+@bot.command(name="stop")
+async def stop(ctx):
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+    vc = voice_clients[ctx.guild.id]
+    music_queues.pop(ctx.guild.id, None)
+    if vc.is_playing():
+        vc.stop()
+    await ctx.send("⏹️ Stopped and cleared queue.")
 
-    if ctx.guild.id in listening_tasks:
-        try:
-            listening_tasks[ctx.guild.id].finish()
-        except:
-            pass
-        del listening_tasks[ctx.guild.id]
+@bot.command(name="queue")
+async def show_queue(ctx):
+    if ctx.guild.id not in music_queues or not music_queues[ctx.guild.id]:
+        await ctx.send("Queue is empty!")
+        return
+    q = music_queues[ctx.guild.id]
+    lines = [f"{i+1}. **{title}**" for i, (_, title) in enumerate(q)]
+    await ctx.send("🎶 **Queue:**\n" + "\n".join(lines))
 
-    await ctx.send("Stopped listening, still in VC~ 🔇")
+@bot.command(name="pause")
+async def pause(ctx):
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+    vc = voice_clients[ctx.guild.id]
+    if vc.is_playing():
+        vc.pause()
+        await ctx.send("⏸️ Paused.")
+    else:
+        await ctx.send("Nothing is playing.")
 
-async def speak_in_voice_channel(vc, text):
-    try:
-        headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
-        payload = {"text": text, "voice_id": "ara", "language": "en"}
+@bot.command(name="resume")
+async def resume(ctx):
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+    vc = voice_clients[ctx.guild.id]
+    if vc.is_paused():
+        vc.resume()
+        await ctx.send("▶️ Resumed!")
+    else:
+        await ctx.send("I'm not paused.")
 
-        session = await get_http_session()
-        async with session.post(
-            "https://api.x.ai/v1/tts",
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=30)
-        ) as resp:
-            if resp.status == 200:
-                audio_bytes = await resp.read()
-                with open("temp_voice.mp3", "wb") as f:
-                    f.write(audio_bytes)
-                while vc.is_playing():
-                    await asyncio.sleep(0.5)
-                source = discord.FFmpegPCMAudio("temp_voice.mp3")
-                vc.play(source)
-            else:
-                print(f"TTS failed: {resp.status} {await resp.text()}")
-    except Exception as e:
-        print(f"TTS in VC failed: {e}")
+@bot.command(name="volume")
+async def volume(ctx, vol: int = None):
+    if not vol:
+        await ctx.send("Usage: !volume 1-100")
+        return
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+    vc = voice_clients[ctx.guild.id]
+    if vc.source:
+        vc.source.volume = max(0.0, min(vol / 100, 1.0))
+        await ctx.send(f"🔊 Volume set to {vol}%")
+    else:
+        await ctx.send("Nothing is playing.")
 
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
@@ -378,7 +367,7 @@ async def song_command(ctx, *, country: str = None):
     if not country:
         await ctx.send("Tell me which country!")
         return
-    answer = await get_accurate_grok_answer(f"Current most popular song in {country}", short=True)
+    answer = await get_accurate_grok_answer(f"What is the most popular song right now in {country}?")
     await ctx.send(f"**🎵 Top song in {country}:** {answer}")
 
 @bot.command(name="singer")
@@ -386,37 +375,35 @@ async def singer_command(ctx, *, country: str = None):
     if not country:
         await ctx.send("Tell me which country!")
         return
-    answer = await get_accurate_grok_answer(f"Most popular singer in {country}", short=True)
+    answer = await get_accurate_grok_answer(f"Who is the most popular singer right now in {country}?")
     await ctx.send(f"**🎤 Top singer in {country}:** {answer}")
 
-async def get_accurate_grok_answer(question: str, short: bool = False):
-    def _search():
-        try:
-            prompt = f"Answer accurately: {question}"
-            if short:
-                prompt += ". Keep it short."
-            resp = sync_client.responses.create(
-                model="grok-4.3",
-                input=[{"role": "user", "content": prompt}],
-                tools=[{"type": "web_search"}]
-            )
-            if hasattr(resp, 'output') and resp.output:
-                return resp.output[0].content[0].text.strip()
-            return str(resp)[:500]
-        except:
-            return "Couldn't get info right now."
-    return await asyncio.to_thread(_search)
+async def get_accurate_grok_answer(question: str):
+    try:
+        response = await client.chat.completions.create(
+            model="grok-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant. Answer accurately and concisely in one sentence using your up to date knowledge."},
+                {"role": "user", "content": question}
+            ],
+            max_tokens=200,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Grok answer error: {e}")
+        return "Couldn't get info right now."
 
 @bot.command(name="list")
 async def list_features(ctx):
     embed = discord.Embed(title="🌸 AstraMizu Feature List", color=discord.Color.pink())
-    embed.add_field(name="Voice Commands", value="!join • !leave • !listen • !stoplisten • !speak", inline=False)
-    embed.add_field(name="Music & Info", value="!song <country> • !singer <country>", inline=False)
-    embed.add_field(name="Fun Commands", value="!hug !kiss !imagine and more!", inline=False)
+    embed.add_field(name="Music", value="!play • !skip • !stop • !queue • !pause • !resume • !volume", inline=False)
+    embed.add_field(name="Voice", value="!join • !leave • !speak <text>", inline=False)
+    embed.add_field(name="Info", value="!song <country> • !singer <country>", inline=False)
     await ctx.send(embed=embed)
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Voice Ready!")
+    print(f"✅ AstraMizu is online as {bot.user} | Music Ready!")
 
 bot.run(os.getenv("DISCORD_TOKEN"))
