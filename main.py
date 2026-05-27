@@ -46,6 +46,10 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 voice_clients = {}
 listening_tasks = {}
 
+def create_silent_audio_source():
+    """Create a silent audio source to keep the bot in VC"""
+    return discord.FFmpegPCMAudio(io.BytesIO(b'\x00' * 48000), pipe=True)
+
 # REACTION SYSTEM
 REACTION_RESPONSES = {
     "❤️": ["Aww~ Thank you! That makes me happy! 💖", "Ehehe~ You're sweet! ❤️"],
@@ -126,13 +130,13 @@ async def on_message(message):
 # VOICE CONVERSATION SYSTEM
 async def keep_alive(vc):
     try:
-        silent_audio = io.BytesIO(b'\x00' * 48000)
-        source = discord.FFmpegPCMAudio(silent_audio, pipe=True)
+        source = create_silent_audio_source()
         vc.play(source, after=lambda e: asyncio.create_task(keep_alive(vc)))
     except:
         pass
 
 async def start_listening(vc, text_channel):
+    """Start Deepgram listening + feed Discord audio to it"""
     try:
         dg_connection = deepgram.listen.live.v("1")
 
@@ -164,9 +168,27 @@ async def start_listening(vc, text_channel):
             vad_events=True
         )
 
-        # Just call start() - it handles everything internally
         dg_connection.start(options)
         listening_tasks[vc.guild.id] = dg_connection
+
+        # Start feeding Discord audio to Deepgram
+        # Use a simple audio sink that sends audio to Deepgram
+        class DeepgramAudioSink(discord.AudioSink):
+            def __init__(self, dg_conn):
+                self.dg_conn = dg_conn
+
+            def write(self, data):
+                # Send raw audio to Deepgram
+                try:
+                    self.dg_conn.send(data)
+                except:
+                    pass
+
+            def cleanup(self):
+                pass
+
+        sink = DeepgramAudioSink(dg_connection)
+        vc.listen(sink)
 
     except Exception as e:
         await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
