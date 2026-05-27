@@ -1,7 +1,6 @@
 import os
 import discord
 from discord.ext import commands
-from discord.ext import voice_recv
 from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
@@ -9,6 +8,7 @@ import random
 import asyncio
 import aiohttp
 import io
+import struct
 from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
 
 intents = discord.Intents.default()
@@ -155,6 +155,32 @@ async def keep_alive(vc):
         if not vc.is_connected() or vc.guild.id not in voice_clients:
             break
 
+# Custom AudioSink that streams PCM to Deepgram
+class DeepgramSink(discord.sinks.Sink):
+    def __init__(self, dg_connection, loop):
+        super().__init__()
+        self.dg_connection = dg_connection
+        self.loop = loop
+
+    def write(self, data, user):
+        try:
+            if user is None:
+                return
+            asyncio.run_coroutine_threadsafe(
+                self._send(data), self.loop
+            )
+        except Exception as e:
+            print(f"Sink write error: {e}")
+
+    async def _send(self, data):
+        try:
+            self.dg_connection.send(data)
+        except Exception as e:
+            print(f"Deepgram send error: {e}")
+
+    def cleanup(self):
+        pass
+
 @bot.command(name="join")
 async def join_vc(ctx):
     if ctx.author.voice is None:
@@ -168,7 +194,6 @@ async def join_vc(ctx):
         return
 
     try:
-        # Normal stable connect — no voice receiving yet
         vc = await voice_channel.connect(self_deaf=True)
         voice_clients[ctx.guild.id] = vc
         await ctx.send(f"Joined {voice_channel.name}! ✨ Use !listen to activate voice chat.")
@@ -184,15 +209,20 @@ async def leave_vc(ctx):
 
     try:
         vc = voice_clients[ctx.guild.id]
-        if vc.is_connected():
-            await vc.disconnect()
 
         if ctx.guild.id in listening_tasks:
+            try:
+                vc.stop_recording()
+            except:
+                pass
             try:
                 listening_tasks[ctx.guild.id].finish()
             except:
                 pass
             del listening_tasks[ctx.guild.id]
+
+        if vc.is_connected():
+            await vc.disconnect()
 
         if ctx.guild.id in listen_channels:
             del listen_channels[ctx.guild.id]
@@ -213,14 +243,6 @@ async def start_listen(ctx):
     listen_channels[ctx.guild.id] = ctx.channel
 
     try:
-        # Disconnect normal client and reconnect with VoiceRecvClient
-        voice_channel = vc.channel
-        await vc.disconnect()
-
-        recv_vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, self_deaf=False)
-        voice_clients[ctx.guild.id] = recv_vc
-
-        # Connect to Deepgram
         dg_connection = deepgram.listen.live.v("1")
 
         async def handle_transcript(result, **kwargs):
@@ -244,7 +266,7 @@ async def start_listen(ctx):
                 )
                 reply = grok_response.choices[0].message.content
                 print(f"Replying: {reply}")
-                await speak_in_voice_channel(recv_vc, reply)
+                await speak_in_voice_channel(vc, reply)
 
             except Exception as e:
                 print(f"Transcript error: {e}")
@@ -264,26 +286,13 @@ async def start_listen(ctx):
 
         dg_connection.start(options)
 
-        class DeepgramSink(voice_recv.AudioSink):
-            def __init__(self, dg_conn):
-                self.dg_conn = dg_conn
+        loop = asyncio.get_event_loop()
+        sink = DeepgramSink(dg_connection, loop)
 
-            def wants_opus(self):
-                return False
+        async def recording_done(sink, channel, *args):
+            pass
 
-            def write(self, user, data):
-                try:
-                    if user is None or user.bot:
-                        return
-                    self.dg_conn.send(data.pcm)
-                except Exception as e:
-                    print(f"Sink error: {e}")
-
-            def cleanup(self):
-                pass
-
-        sink = DeepgramSink(dg_connection)
-        recv_vc.listen(sink)
+        vc.start_recording(sink, recording_done, ctx.channel)
         listening_tasks[ctx.guild.id] = dg_connection
 
         await ctx.send("Listening! Speak and I'll respond~ 🎤")
@@ -299,10 +308,9 @@ async def stop_listen(ctx):
         return
 
     vc = voice_clients[ctx.guild.id]
-    voice_channel = vc.channel
 
     try:
-        vc.stop_listening()
+        vc.stop_recording()
     except:
         pass
 
@@ -312,12 +320,6 @@ async def stop_listen(ctx):
         except:
             pass
         del listening_tasks[ctx.guild.id]
-
-    # Reconnect as normal stable client
-    await vc.disconnect()
-    new_vc = await voice_channel.connect(self_deaf=True)
-    voice_clients[ctx.guild.id] = new_vc
-    asyncio.create_task(keep_alive(new_vc))
 
     await ctx.send("Stopped listening, still in VC~ 🔇")
 
