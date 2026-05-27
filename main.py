@@ -1,6 +1,6 @@
 import os
 import discord
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 from openai import AsyncOpenAI, OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
@@ -123,22 +123,75 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# VOICE CONVERSATION SYSTEM - STABLE VERSION
+# STABLE VOICE SYSTEM
 async def keep_alive(vc):
-    """Simple keep-alive that plays silent audio periodically"""
     try:
-        # Play a very short silent audio (0.5 seconds)
         silent = io.BytesIO(b'\x00' * 24000)
         source = discord.FFmpegPCMAudio(silent, pipe=True)
         vc.play(source)
-        # Schedule next keep-alive in 30 seconds
-        await asyncio.sleep(30)
+        await asyncio.sleep(25)
         if vc.is_connected():
             asyncio.create_task(keep_alive(vc))
     except:
         pass
 
-async def start_listening(vc, text_channel):
+@bot.command(name="join")
+async def join_vc(ctx):
+    if ctx.author.voice is None:
+        await ctx.send("You're not in a voice channel!")
+        return
+
+    voice_channel = ctx.author.voice.channel
+
+    if ctx.guild.id in voice_clients:
+        await ctx.send("I'm already in a voice channel!")
+        return
+
+    try:
+        vc = await voice_channel.connect()
+        voice_clients[ctx.guild.id] = vc
+
+        await ctx.send(f"Joined {voice_channel.name}! Bot is now in VC (stable mode) ✨")
+
+        # Start stable keep-alive
+        asyncio.create_task(keep_alive(vc))
+
+    except Exception as e:
+        await ctx.send(f"Failed to join: {str(e)[:100]}")
+
+@bot.command(name="leave")
+async def leave_vc(ctx):
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("I'm not in a voice channel!")
+        return
+
+    try:
+        vc = voice_clients[ctx.guild.id]
+        if vc.is_connected():
+            await vc.disconnect()
+
+        if ctx.guild.id in listening_tasks:
+            try:
+                await listening_tasks[ctx.guild.id].finish()
+            except:
+                pass
+            del listening_tasks[ctx.guild.id]
+
+        del voice_clients[ctx.guild.id]
+        await ctx.send("Left the voice channel. See you later~ 👋")
+
+    except Exception as e:
+        await ctx.send(f"Error leaving: {str(e)[:100]}")
+
+@bot.command(name="listen")
+async def start_listen(ctx):
+    """Start listening mode (may be unstable on Railway)"""
+    if ctx.guild.id not in voice_clients:
+        await ctx.send("Use !join first!")
+        return
+
+    vc = voice_clients[ctx.guild.id]
+
     try:
         dg_connection = deepgram.listen.live.v("1")
 
@@ -171,27 +224,12 @@ async def start_listening(vc, text_channel):
         )
 
         dg_connection.start(options)
-        listening_tasks[vc.guild.id] = dg_connection
+        listening_tasks[ctx.guild.id] = dg_connection
 
-        # Audio sink
-        class DeepgramAudioSink(voice_recv.AudioSink):
-            def __init__(self, dg_conn):
-                self.dg_conn = dg_conn
-
-            def write(self, data):
-                try:
-                    self.dg_conn.send(data)
-                except:
-                    pass
-
-            def cleanup(self):
-                pass
-
-        sink = DeepgramAudioSink(dg_connection)
-        vc.listen(sink)
+        await ctx.send("Listening mode activated! Speak now~ 🎤")
 
     except Exception as e:
-        await text_channel.send(f"Voice listening failed: {str(e)[:100]}")
+        await ctx.send(f"Listening failed: {str(e)[:100]}")
 
 async def speak_in_voice_channel(vc, text):
     try:
@@ -211,55 +249,6 @@ async def speak_in_voice_channel(vc, text):
                     vc.play(source)
     except Exception as e:
         print(f"TTS in VC failed: {e}")
-
-@bot.command(name="join")
-async def join_vc(ctx):
-    if ctx.author.voice is None:
-        await ctx.send("You're not in a voice channel!")
-        return
-
-    voice_channel = ctx.author.voice.channel
-
-    if ctx.guild.id in voice_clients:
-        await ctx.send("I'm already in a voice channel!")
-        return
-
-    try:
-        vc = await voice_channel.connect()
-        voice_clients[ctx.guild.id] = vc
-
-        await ctx.send(f"Joined {voice_channel.name}! I'm now listening~ ✨")
-
-        # Start keep-alive (non-recursive to avoid disconnect loops)
-        asyncio.create_task(keep_alive(vc))
-        await start_listening(vc, ctx.channel)
-
-    except Exception as e:
-        await ctx.send(f"Failed to join: {str(e)[:100]}")
-
-@bot.command(name="leave")
-async def leave_vc(ctx):
-    if ctx.guild.id not in voice_clients:
-        await ctx.send("I'm not in a voice channel!")
-        return
-
-    try:
-        vc = voice_clients[ctx.guild.id]
-        if vc.is_connected():
-            await vc.disconnect()
-
-        if ctx.guild.id in listening_tasks:
-            try:
-                await listening_tasks[ctx.guild.id].finish()
-            except:
-                pass
-            del listening_tasks[ctx.guild.id]
-
-        del voice_clients[ctx.guild.id]
-        await ctx.send("Left the voice channel. See you later~ 👋")
-
-    except Exception as e:
-        await ctx.send(f"Error leaving: {str(e)[:100]}")
 
 @bot.command(name="speak")
 async def speak(ctx, *, text: str = None):
@@ -317,13 +306,13 @@ async def get_accurate_grok_answer(question: str, short: bool = False):
 @bot.command(name="list")
 async def list_features(ctx):
     embed = discord.Embed(title="🌸 AstraMizu Feature List", color=discord.Color.pink())
-    embed.add_field(name="Voice Commands", value="!join • !leave • !speak", inline=False)
+    embed.add_field(name="Voice Commands", value="!join • !leave • !listen • !speak", inline=False)
     embed.add_field(name="Music & Info", value="!song <country> • !singer <country> • !ask <question>", inline=False)
     embed.add_field(name="Fun Commands", value="!hug !kiss !imagine and more!", inline=False)
     await ctx.send(embed=embed)
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Full Voice Mode Ready!")
+    print(f"✅ AstraMizu is online as {bot.user} | Stable Voice Mode Ready!")
 
 bot.run(os.getenv("DISCORD_TOKEN"))
