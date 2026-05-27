@@ -136,7 +136,7 @@ async def start_listening(vc, text_channel):
     try:
         dg_connection = deepgram.listen.live.v("1")
 
-        async def on_message(result, **kwargs):
+        async def on_transcript(result, **kwargs):
             transcript = result.channel.alternatives[0].transcript
             if transcript and len(transcript.strip()) > 3:
                 try:
@@ -154,7 +154,7 @@ async def start_listening(vc, text_channel):
                 except Exception as e:
                     print(f"Grok error: {e}")
 
-        dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
+        dg_connection.on(LiveTranscriptionEvents.Transcript, on_transcript)
 
         options = LiveOptions(
             model="nova-2",
@@ -164,7 +164,8 @@ async def start_listening(vc, text_channel):
             vad_events=True
         )
 
-        await dg_connection.start(options)
+        # Use create_task to avoid await issues
+        asyncio.create_task(dg_connection.start(options))
         listening_tasks[vc.guild.id] = dg_connection
 
     except Exception as e:
