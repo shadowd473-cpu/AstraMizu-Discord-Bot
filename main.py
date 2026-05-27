@@ -46,10 +46,10 @@ collection = chroma_client.get_or_create_collection(name="astra_memory", embeddi
 voice_clients = {}
 listening_tasks = {}
 
-# Shared aiohttp session (reused across requests instead of creating a new one every time)
-_http_session: aiohttp.ClientSession | None = None
+# Shared aiohttp session
+_http_session = None
 
-async def get_http_session() -> aiohttp.ClientSession:
+async def get_http_session():
     global _http_session
     if _http_session is None or _http_session.closed:
         _http_session = aiohttp.ClientSession()
@@ -89,42 +89,32 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # --- SPEED: run memory save + memory fetch concurrently instead of sequentially ---
-    async def save_memory():
-        try:
-            collection.add(
-                documents=[message.content[:150]],
-                metadatas=[{"user_id": str(message.author.id)}],
-                ids=[f"{message.author.id}_{message.id}"]
-            )
-        except:
-            pass
+    # Save memory
+    try:
+        collection.add(
+            documents=[message.content[:150]],
+            metadatas=[{"user_id": str(message.author.id)}],
+            ids=[f"{message.author.id}_{message.id}"]
+        )
+    except:
+        pass
 
-    async def fetch_memory():
-        try:
-            results = collection.query(
-                query_texts=[message.content[:80]],
-                n_results=4,
-                where={"user_id": str(message.author.id)}
-            )
-            if results and results.get("documents"):
-                return "\n".join(results["documents"][0])
-        except:
-            pass
-        return ""
-
-    # Run both at the same time; neither blocks the other
-    _, history = await asyncio.gather(
-        asyncio.to_thread(save_memory),   # chroma is sync under the hood
-        asyncio.to_thread(fetch_memory),
-    )
+    # Fetch memory
+    history = ""
+    try:
+        results = collection.query(
+            query_texts=[message.content[:80]],
+            n_results=4,
+            where={"user_id": str(message.author.id)}
+        )
+        if results and results.get("documents"):
+            history = "\n".join(results["documents"][0])
+    except:
+        pass
 
     async with message.channel.typing():
         try:
-            # --- SPEED: stream the LLM response so the reply posts the moment
-            #     the first tokens arrive, not after the full generation finishes ---
-            reply_chunks = []
-            async with client.chat.completions.stream(
+            response = await client.chat.completions.create(
                 model="grok-4",
                 messages=[
                     {
@@ -145,25 +135,20 @@ async def on_message(message):
                 ],
                 max_tokens=500,
                 temperature=0.95,
-            ) as stream:
-                async for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        reply_chunks.append(delta)
-
-            reply = "".join(reply_chunks)
+            )
+            reply = response.choices[0].message.content
             await message.reply(reply)
 
-            # --- SPEED: fire TTS concurrently — don't wait for it before returning ---
             if len(reply) < 450:
                 asyncio.create_task(send_voice_note(message.channel, reply))
 
-        except Exception:
+        except Exception as e:
+            print(f"LLM error: {e}")
             await message.reply("Sorry... the stars are a bit cloudy today.")
 
     await bot.process_commands(message)
 
-# KEEP-ALIVE — no audio needed, just holds the connection open
+# KEEP-ALIVE — no audio, no FFmpeg needed, just holds the connection open
 async def keep_alive(vc):
     while True:
         await asyncio.sleep(10)
@@ -185,11 +170,8 @@ async def join_vc(ctx):
     try:
         vc = await voice_channel.connect(self_deaf=True)
         voice_clients[ctx.guild.id] = vc
-
         await ctx.send(f"Joined {voice_channel.name}! ✨")
-
         asyncio.create_task(keep_alive(vc))
-
     except Exception as e:
         await ctx.send(f"Failed to join: {str(e)[:100]}")
 
@@ -219,7 +201,6 @@ async def leave_vc(ctx):
 
 @bot.command(name="listen")
 async def start_listen(ctx):
-    """Start listening mode (may be unstable on Railway)"""
     if ctx.guild.id not in voice_clients:
         await ctx.send("Use !join first!")
         return
@@ -270,7 +251,6 @@ async def speak_in_voice_channel(vc, text):
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
         payload = {"text": text, "voice_id": "ara", "language": "en"}
 
-        # --- SPEED: reuse the shared session ---
         session = await get_http_session()
         async with session.post(
             "https://api.x.ai/v1/tts",
@@ -282,7 +262,6 @@ async def speak_in_voice_channel(vc, text):
                 audio_bytes = await resp.read()
                 with open("temp_voice.mp3", "wb") as f:
                     f.write(audio_bytes)
-
                 source = discord.FFmpegPCMAudio("temp_voice.mp3")
                 if vc.is_playing():
                     vc.stop()
@@ -302,7 +281,6 @@ async def send_voice_note(channel, text):
         headers = {"Authorization": f"Bearer {os.getenv('XAI_API_KEY')}", "Content-Type": "application/json"}
         payload = {"text": text, "voice_id": "ara", "language": "en"}
 
-        # --- SPEED: reuse the shared session ---
         session = await get_http_session()
         async with session.post(
             "https://api.x.ai/v1/tts",
@@ -314,7 +292,7 @@ async def send_voice_note(channel, text):
                 audio_bytes = await resp.read()
                 await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
     except Exception as e:
-        await channel.send(f"Voice failed: {str(e)[:80]}")
+        print(f"Voice note failed: {e}")
 
 @bot.command(name="song")
 async def song_command(ctx, *, country: str = None):
