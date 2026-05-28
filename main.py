@@ -175,7 +175,7 @@ async def on_message(message):
     try:
         results = collection.query(
             query_texts=[message.content[:80]],
-            n_results=4,
+            n_results=6,
             where={"user_id": str(message.author.id)}
         )
         if results and results.get("documents"):
@@ -226,6 +226,17 @@ async def on_message(message):
             if is_inappropriate(reply):
                 reply = "Ehehe~ That topic is a bit too spicy for me, sorry! 💕 Let's keep things cute and wholesome~ What fun thing shall we do instead? Maybe a game or some music? ✨"
             await message.reply(reply)
+
+            # Store full conversation turn for better memory
+            try:
+                conversation_turn = f"User: {message.content}\nAstra: {reply}"
+                collection.add(
+                    documents=[conversation_turn],
+                    metadatas=[{"user_id": str(message.author.id)}],
+                    ids=[f"{message.author.id}_{message.id}_turn"]
+                )
+            except:
+                pass
 
             if len(reply) < 450:
                 asyncio.create_task(send_voice_note(message.channel, reply))
