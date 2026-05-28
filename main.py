@@ -2,8 +2,9 @@ import os
 import discord
 from discord.ext import commands
 from openai import AsyncOpenAI, OpenAI
-import chromadb
-from chromadb.utils import embedding_functions
+import json
+from collections import deque
+
 import random
 import asyncio
 import aiohttp
@@ -30,44 +31,34 @@ deepgram = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY"))
 OWNER_ID = 406054379406229504
 TRIGGER_WORDS = ["astra", "mizu", "astramizu"]
 
+# === FULL CONVERSATION MEMORY (remembers everything) ===
+MEMORY_FILE = "conversation_memory.json"
+MAX_HISTORY_TURNS = 20
+
+def load_memory(user_id):
+    try:
+        with open(MEMORY_FILE, "r") as f:
+            data = json.load(f)
+        return data.get(str(user_id), [])
+    except:
+        return []
+
+def save_memory(user_id, history):
+    try:
+        try:
+            with open(MEMORY_FILE, "r") as f:
+                data = json.load(f)
+        except:
+            data = {}
+        data[str(user_id)] = history[-MAX_HISTORY_TURNS*2:]  # keep last 40 entries
+        with open(MEMORY_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Memory save error: {e}")
+
 voice_enabled = {OWNER_ID: True}
 random_events_enabled = True
 games = {}
-
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
-embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-collection = chroma_client.get_or_create_collection(name="astra_memory", embedding_function=embedding_function)
-
-def is_inappropriate(text: str) -> bool:
-    """Check if the text contains inappropriate content using a keyword filter."""
-    if not text:
-        return False
-    bad_keywords = [
-        "fuck", "shit", "bitch", "asshole", "dick", "pussy", "cock", "cunt", "whore", "slut",
-        "sex", "porn", "nude", "naked", "rape", "molest", "pedophile", "child", "minor",
-        "kill yourself", "suicide", "kys", "die", "hate", "racist", "nigger", "faggot", "retard",
-        "gay retard", "tranny", "nigga", "motherfucker", "bastard", "damn it", "hell no",
-        "explicit", "nsfw", "hentai", "lewd", "horny", "cum", "orgasm", "masturbat"
-    ]
-    text_lower = text.lower()
-    for keyword in bad_keywords:
-        if keyword in text_lower:
-            return True
-    return False
-
-
-def is_repeat_request(text: str) -> bool:
-    """Detect if the user is asking the bot to repeat or say something specific (potential bypass)."""
-    text_lower = text.lower()
-    repeat_patterns = [
-        "say this", "repeat this", "repeat after me", "echo this", 
-        "say:", "repeat:", "echo:", "copy this", "paste this", "say exactly", "repeat exactly"
-    ]
-    for pattern in repeat_patterns:
-        if pattern in text_lower:
-            return True
-    return False
-
 
 # Voice state
 voice_clients = {}
@@ -162,31 +153,13 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    try:
-        collection.add(
-            documents=[message.content[:150]],
-            metadatas=[{"user_id": str(message.author.id)}],
-            ids=[f"{message.author.id}_{message.id}"]
-        )
-    except:
-        pass
-
-    history = ""
-    try:
-        results = collection.query(
-            query_texts=[message.content[:80]],
-            n_results=6,
-            where={"user_id": str(message.author.id)}
-        )
-        if results and results.get("documents"):
-            history = "\n".join(results["documents"][0])
-    except:
-        pass
+    # Load full conversation history
+    history = load_memory(message.author.id)
+    history_text = "\n".join([f"{turn['role']}: {turn['content']}" for turn in history[-MAX_HISTORY_TURNS:]])
 
     # === NEW SAFETY: Block repeat/say-this bypass attempts ===
     if is_repeat_request(message.content):
         content_to_check = message.content
-        # Try to extract the part the user wants repeated
         for pattern in ["say this", "repeat this", "repeat after me", "echo this", "say:", "repeat:", "echo:"]:
             if pattern in message.content.lower():
                 idx = message.content.lower().find(pattern) + len(pattern)
@@ -195,7 +168,7 @@ async def on_message(message):
         if is_inappropriate(content_to_check):
             await message.reply("Ehehe~ I can't say that! 💕 Let's keep things cute and wholesome instead~ What fun game shall we play? ✨")
             await bot.process_commands(message)
-            return  # Don't let the AI see or repeat the bad content
+            return
 
     async with message.channel.typing():
         try:
@@ -216,27 +189,21 @@ async def on_message(message):
                     },
                     {
                         "role": "user",
-                        "content": f"Past relevant memories:\n{history}\n\nCurrent message: {message.content}",
+                        "content": f"Conversation history:\n{history_text}\n\nCurrent message: {message.content}",
                     },
                 ],
-                max_tokens=500,
-                temperature=0.95,
+                max_tokens=600,
+                temperature=0.9,
             )
             reply = response.choices[0].message.content
             if is_inappropriate(reply):
                 reply = "Ehehe~ That topic is a bit too spicy for me, sorry! 💕 Let's keep things cute and wholesome~ What fun thing shall we do instead? Maybe a game or some music? ✨"
             await message.reply(reply)
 
-            # Store full conversation turn for better memory
-            try:
-                conversation_turn = f"User: {message.content}\nAstra: {reply}"
-                collection.add(
-                    documents=[conversation_turn],
-                    metadatas=[{"user_id": str(message.author.id)}],
-                    ids=[f"{message.author.id}_{message.id}_turn"]
-                )
-            except:
-                pass
+            # Save this turn to memory
+            history.append({"role": "User", "content": message.content})
+            history.append({"role": "Astra", "content": reply})
+            save_memory(message.author.id, history)
 
             if len(reply) < 450:
                 asyncio.create_task(send_voice_note(message.channel, reply))
@@ -463,6 +430,6 @@ async def list_features(ctx):
 
 @bot.event
 async def on_ready():
-    print(f"✅ AstraMizu is online as {bot.user} | Music Ready!")
+    print(f"✅ AstraMizu is online as {bot.user} | Music Ready! | Full Memory Active")
 
 bot.run(os.getenv("DISCORD_TOKEN"))
