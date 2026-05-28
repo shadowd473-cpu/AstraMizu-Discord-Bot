@@ -33,10 +33,12 @@ TRIGGER_WORDS = ["astra", "mizu", "astramizu"]
 
 # === FULL CONVERSATION MEMORY (remembers everything) ===
 MEMORY_FILE = "conversation_memory.json"
-MAX_HISTORY_TURNS = 20
+MAX_HISTORY_TURNS = 25
 
 def load_memory(user_id):
     try:
+        if not os.path.exists(MEMORY_FILE):
+            return []
         with open(MEMORY_FILE, "r") as f:
             data = json.load(f)
         return data.get(str(user_id), [])
@@ -50,11 +52,16 @@ def save_memory(user_id, history):
                 data = json.load(f)
         except:
             data = {}
-        data[str(user_id)] = history[-MAX_HISTORY_TURNS*2:]  # keep last 40 entries
+        data[str(user_id)] = history[-MAX_HISTORY_TURNS*2:]
         with open(MEMORY_FILE, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"Memory save error: {e}")
+
+# Create memory file on startup if it doesn't exist
+if not os.path.exists(MEMORY_FILE):
+    with open(MEMORY_FILE, "w") as f:
+        json.dump({}, f)
 
 voice_enabled = {OWNER_ID: True}
 random_events_enabled = True
@@ -214,6 +221,17 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+@bot.command(name="memory")
+async def show_memory(ctx):
+    if ctx.author.id != OWNER_ID:
+        return
+    history = load_memory(ctx.author.id)
+    if not history:
+        await ctx.send("No memory saved yet.")
+        return
+    text = "\n".join([f"{turn['role']}: {turn['content'][:80]}..." for turn in history[-10:]])
+    await ctx.send(f"**Last 10 memory turns:**\n{text}")
+
 # KEEP-ALIVE
 async def keep_alive(vc):
     while True:
@@ -281,14 +299,14 @@ async def play(ctx, *, query: str = None):
         await ctx.send("Couldn't find that song, sorry~ 😢")
         return
 
-    if ctx.guild.id not in music_queues:
-        music_queues[ctx.guild.id] = []
+    if ctx.guild.id not in memory_queues:
+        memory_queues[ctx.guild.id] = []
 
     if vc.is_playing():
-        music_queues[ctx.guild.id].append((url, title))
+        memory_queues[ctx.guild.id].append((url, title))
         await ctx.send(f"➕ Added to queue: **{title}**")
     else:
-        music_queues[ctx.guild.id].insert(0, (url, title))
+        memory_queues[ctx.guild.id].insert(0, (url, title))
         await play_next(ctx.guild.id)
         await ctx.send(f"🎵 Now playing: **{title}**")
 
