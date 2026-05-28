@@ -3,7 +3,6 @@ import discord
 from discord.ext import commands
 from openai import AsyncOpenAI, OpenAI
 import json
-from collections import deque
 
 import random
 import asyncio
@@ -31,7 +30,7 @@ deepgram = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY"))
 OWNER_ID = 406054379406229504
 TRIGGER_WORDS = ["astra", "mizu", "astramizu"]
 
-# === FULL CONVERSATION MEMORY (remembers everything) ===
+# === FULL CONVERSATION MEMORY ===
 MEMORY_FILE = "conversation_memory.json"
 MAX_HISTORY_TURNS = 25
 
@@ -58,7 +57,6 @@ def save_memory(user_id, history):
     except Exception as e:
         print(f"Memory save error: {e}")
 
-# Create memory file on startup if it doesn't exist
 if not os.path.exists(MEMORY_FILE):
     with open(MEMORY_FILE, "w") as f:
         json.dump({}, f)
@@ -67,11 +65,9 @@ voice_enabled = {OWNER_ID: True}
 random_events_enabled = True
 games = {}
 
-# Voice state
 voice_clients = {}
-music_queues = {}  # guild_id -> list of (url, title)
+music_queues = {}
 
-# Shared aiohttp session
 _http_session = None
 
 async def get_http_session():
@@ -126,7 +122,6 @@ async def play_next(guild_id):
     source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
     vc.play(discord.PCMVolumeTransformer(source, volume=0.5), after=after_playing)
 
-# REACTION SYSTEM
 REACTION_RESPONSES = {
     "❤️": ["Aww~ Thank you! That makes me happy! 💖", "Ehehe~ You're sweet! ❤️"],
     "😘": ["*blushes* K-Kyaa~! Thank you! 😳", "Mwah~ Right back at you! 💋"],
@@ -146,7 +141,6 @@ async def on_reaction_add(reaction, user):
         response = random.choice(REACTION_RESPONSES[emoji])
         await reaction.message.channel.send(f"{user.mention} {response}")
 
-# MAIN HANDLER
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -160,11 +154,9 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Load full conversation history
     history = load_memory(message.author.id)
     history_text = "\n".join([f"{turn['role']}: {turn['content']}" for turn in history[-MAX_HISTORY_TURNS:]])
 
-    # === NEW SAFETY: Block repeat/say-this bypass attempts ===
     if is_repeat_request(message.content):
         content_to_check = message.content
         for pattern in ["say this", "repeat this", "repeat after me", "echo this", "say:", "repeat:", "echo:"]:
@@ -207,7 +199,6 @@ async def on_message(message):
                 reply = "Ehehe~ That topic is a bit too spicy for me, sorry! 💕 Let's keep things cute and wholesome~ What fun thing shall we do instead? Maybe a game or some music? ✨"
             await message.reply(reply)
 
-            # Save this turn to memory
             history.append({"role": "User", "content": message.content})
             history.append({"role": "Astra", "content": reply})
             save_memory(message.author.id, history)
@@ -223,21 +214,13 @@ async def on_message(message):
 
 @bot.command(name="memory")
 async def show_memory(ctx):
-    if ctx.author.id != OWNER_ID:
-        return
     history = load_memory(ctx.author.id)
     if not history:
-        await ctx.send("No memory saved yet.")
+        await ctx.send("No memory saved yet. Start chatting with me and I'll remember everything~ ✨")
         return
-    text = "\n".join([f"{turn['role']}: {turn['content'][:80]}..." for turn in history[-10:]])
-    await ctx.send(f"**Last 10 memory turns:**\n{text}")
-
-# KEEP-ALIVE
-async def keep_alive(vc):
-    while True:
-        await asyncio.sleep(10)
-        if not vc.is_connected() or vc.guild.id not in voice_clients:
-            break
+    text = "\n".join([f"{turn['role']}: {turn['content'][:100]}" for turn in history[-8:]])
+    await ctx.send(f"**My Memory (last 8 turns):**
+{text}")
 
 @bot.command(name="join")
 async def join_vc(ctx):
@@ -299,14 +282,14 @@ async def play(ctx, *, query: str = None):
         await ctx.send("Couldn't find that song, sorry~ 😢")
         return
 
-    if ctx.guild.id not in memory_queues:
-        memory_queues[ctx.guild.id] = []
+    if ctx.guild.id not in music_queues:
+        music_queues[ctx.guild.id] = []
 
     if vc.is_playing():
-        memory_queues[ctx.guild.id].append((url, title))
+        music_queues[ctx.guild.id].append((url, title))
         await ctx.send(f"➕ Added to queue: **{title}**")
     else:
-        memory_queues[ctx.guild.id].insert(0, (url, title))
+        music_queues[ctx.guild.id].insert(0, (url, title))
         await play_next(ctx.guild.id)
         await ctx.send(f"🎵 Now playing: **{title}**")
 
