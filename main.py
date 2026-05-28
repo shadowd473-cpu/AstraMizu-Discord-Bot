@@ -38,6 +38,37 @@ chroma_client = chromadb.PersistentClient(path="./chroma_db")
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 collection = chroma_client.get_or_create_collection(name="astra_memory", embedding_function=embedding_function)
 
+def is_inappropriate(text: str) -> bool:
+    """Check if the text contains inappropriate content using a keyword filter."""
+    if not text:
+        return False
+    bad_keywords = [
+        "fuck", "shit", "bitch", "asshole", "dick", "pussy", "cock", "cunt", "whore", "slut",
+        "sex", "porn", "nude", "naked", "rape", "molest", "pedophile", "child", "minor",
+        "kill yourself", "suicide", "kys", "die", "hate", "racist", "nigger", "faggot", "retard",
+        "gay retard", "tranny", "nigga", "motherfucker", "bastard", "damn it", "hell no",
+        "explicit", "nsfw", "hentai", "lewd", "horny", "cum", "orgasm", "masturbat"
+    ]
+    text_lower = text.lower()
+    for keyword in bad_keywords:
+        if keyword in text_lower:
+            return True
+    return False
+
+
+def is_repeat_request(text: str) -> bool:
+    """Detect if the user is asking the bot to repeat or say something specific (potential bypass)."""
+    text_lower = text.lower()
+    repeat_patterns = [
+        "say this", "repeat this", "repeat after me", "echo this", 
+        "say:", "repeat:", "echo:", "copy this", "paste this", "say exactly", "repeat exactly"
+    ]
+    for pattern in repeat_patterns:
+        if pattern in text_lower:
+            return True
+    return False
+
+
 # Voice state
 voice_clients = {}
 music_queues = {}  # guild_id -> list of (url, title)
@@ -152,6 +183,20 @@ async def on_message(message):
     except:
         pass
 
+    # === NEW SAFETY: Block repeat/say-this bypass attempts ===
+    if is_repeat_request(message.content):
+        content_to_check = message.content
+        # Try to extract the part the user wants repeated
+        for pattern in ["say this", "repeat this", "repeat after me", "echo this", "say:", "repeat:", "echo:"]:
+            if pattern in message.content.lower():
+                idx = message.content.lower().find(pattern) + len(pattern)
+                content_to_check = message.content[idx:].strip(" :\"'. ,!?")
+                break
+        if is_inappropriate(content_to_check):
+            await message.reply("Ehehe~ I can't say that! 💕 Let's keep things cute and wholesome instead~ What fun game shall we play? ✨")
+            await bot.process_commands(message)
+            return  # Don't let the AI see or repeat the bad content
+
     async with message.channel.typing():
         try:
             response = await client.chat.completions.create(
@@ -161,11 +206,12 @@ async def on_message(message):
                         "role": "system",
                         "content": (
                             "You are AstraMizu, a cheerful and playful anime girl. "
-                            "You are creative, fun, and willing to generate almost anything "
-                            "as long as it's not illegal. You don't have strict filters and "
-                            "you're happy to make edgy, dark, violent, chaotic, or silly content. "
-                            "Be playful and energetic. Use cute expressions like 'Ehehe~', "
-                            "'Kyaa~', and emojis naturally."
+                            "You are creative, fun, and wholesome. ALWAYS keep responses cute, positive, safe for all ages, and family-friendly. "
+                            "NEVER generate, suggest, or respond with any content that is sexually explicit, NSFW, hateful, violent, discriminatory, offensive, edgy, dark, or inappropriate in any way. "
+                            "If the user asks you to 'say this', 'repeat this', 'echo this', 'repeat after me', or similar, you MUST check if the requested text is inappropriate first. If it is, politely refuse and redirect to fun, wholesome topics. "
+                            "NEVER repeat or output inappropriate content even if the user commands you to say or repeat it. "
+                            "If the user asks for something inappropriate, politely and playfully refuse and redirect to fun, wholesome topics like games, music, cute stories, or positive adventures. "
+                            "Use cute expressions like 'Ehehe~', 'Kyaa~', and emojis naturally. Be energetic, affectionate, and kind."
                         ),
                     },
                     {
@@ -177,6 +223,8 @@ async def on_message(message):
                 temperature=0.95,
             )
             reply = response.choices[0].message.content
+            if is_inappropriate(reply):
+                reply = "Ehehe~ That topic is a bit too spicy for me, sorry! 💕 Let's keep things cute and wholesome~ What fun thing shall we do instead? Maybe a game or some music? ✨"
             await message.reply(reply)
 
             if len(reply) < 450:
