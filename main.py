@@ -268,36 +268,6 @@ async def play_next(guild_id):
         await play_next(guild_id)
 
 
-async def send_voice_note(channel, text):
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key or not text:
-        return
-    try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "text": text[:15000],
-            "voice_id": "ara",
-            "language": "en",
-        }
-        session = await get_http_session()
-        async with session.post(
-            "https://api.x.ai/v1/tts",
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=30),
-        ) as resp:
-            if resp.status == 200:
-                audio_bytes = await resp.read()
-                await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
-            else:
-                body = await resp.text()
-                print(f"Voice note failed ({resp.status}): {body[:200]}")
-    except Exception as e:
-        print(f"Voice note failed: {e}")
-
 
 async def get_accurate_grok_answer(question: str):
     try:
