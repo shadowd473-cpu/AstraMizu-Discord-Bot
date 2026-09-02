@@ -7,7 +7,11 @@ import aiohttp
 import discord
 from discord.ext import commands
 from openai import AsyncOpenAI
-import yt_dlp
+
+try:
+    import yt_dlp
+except Exception:
+    yt_dlp = None
 
 try:
     from deepgram import DeepgramClient
@@ -90,18 +94,82 @@ SYSTEM_PROMPT = (
     "Use cute expressions like 'Ehehe~', 'Kyaa~', and emojis naturally. Be energetic, affectionate, and kind."
 )
 
-YTDL_OPTIONS = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
-    "default_search": "ytsearch",
-    "source_address": "0.0.0.0",
-    "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
-}
+def _netscape_from_json(raw):
+    data = json.loads(raw)
+    if not isinstance(data, list):
+        return None
+    lines = ["# Netscape HTTP Cookie File"]
+    for item in data:
+        if not isinstance(item, dict) or "name" not in item:
+            continue
+        domain = item.get("domain") or item.get("host") or ".youtube.com"
+        include_sub = "TRUE" if domain.startswith(".") else "FALSE"
+        path = item.get("path") or "/"
+        secure = "TRUE" if item.get("secure") else "FALSE"
+        expires = str(int(item.get("expirationDate") or item.get("expires") or 0))
+        name = item["name"]
+        value = item.get("value") or ""
+        lines.append(f"{domain}\t{include_sub}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
+    return "\n".join(lines) + "\n" if len(lines) > 1 else None
+
+
+def cookies_file_path():
+    path = os.getenv("YTDLP_COOKIES_FILE", "cookies.txt")
+    raw = os.getenv("YTDLP_COOKIES")
+    if raw:
+        try:
+            tmp_path = "/tmp/yt-cookies.txt"
+            text = raw.strip().replace("\\n", "\n").replace("\\t", "\t")
+            if text.startswith("[") or text.startswith("{"):
+                converted = _netscape_from_json(text)
+                if converted:
+                    text = converted
+            if not text.lstrip().startswith("#"):
+                text = "# Netscape HTTP Cookie File\n" + text
+            with open(tmp_path, "w") as f:
+                f.write(text)
+            usable = sum(1 for line in text.splitlines() if line and not line.startswith("#") and "\t" in line)
+            print(f"Loaded YTDLP_COOKIES with {usable} cookie rows")
+            if usable == 0:
+                print("YTDLP_COOKIES is not Netscape format. Export cookies.txt again; tabs must be kept.")
+                return None
+            return tmp_path
+        except Exception as e:
+            print(f"Failed to write YTDLP_COOKIES: {e}")
+    if path and os.path.exists(path):
+        print(f"Using cookie file {path}")
+        return path
+    print("No YouTube cookies loaded")
+    return None
+
+
+def build_ytdl_options(player_clients=None):
+    youtube_args = {
+        "player_client": player_clients or ["tv", "ios", "android"],
+    }
+    po_token = os.getenv("YTDLP_PO_TOKEN")
+    visitor = os.getenv("YTDLP_VISITOR_DATA")
+    if po_token:
+        youtube_args["po_token"] = [po_token]
+    if visitor:
+        youtube_args["visitor_data"] = [visitor]
+    options = {
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "default_search": "ytsearch",
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "extractor_args": {"youtube": youtube_args},
+    }
+    cookies = cookies_file_path()
+    if cookies:
+        options["cookiefile"] = cookies
+    return options
 
 FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin",
     "options": "-vn",
 }
 
@@ -181,22 +249,43 @@ async def get_http_session():
 
 
 def search_youtube(query):
-    with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
+    if yt_dlp is None:
+        print("yt-dlp is not installed. Add yt-dlp to requirements.txt and redeploy.")
+        return None, None, "yt-dlp is not installed", {}
+
+    last_error = None
+    client_sets = (
+        ["tv"],
+        ["ios"],
+        ["android"],
+        ["web_safari"],
+    )
+    target = query if query.startswith(("http://", "https://")) else f"ytsearch:{query}"
+
+    for clients in client_sets:
         try:
-            if query.startswith(("http://", "https://")):
-                info = ydl.extract_info(query, download=False)
-            else:
-                info = ydl.extract_info(f"ytsearch:{query}", download=False)
+            with yt_dlp.YoutubeDL(build_ytdl_options(clients)) as ydl:
+                info = ydl.extract_info(target, download=False)
                 if info and info.get("entries"):
                     info = info["entries"][0]
-            if not info:
-                return None, None
-            url = info.get("url") or info.get("webpage_url")
-            title = info.get("title", "Unknown")
-            return url, title
+                if not info:
+                    continue
+                url = info.get("url")
+                title = info.get("title", "Unknown")
+                headers = info.get("http_headers") or {}
+                if url:
+                    return url, title, None, headers
         except Exception as e:
-            print(f"yt-dlp error: {e}")
-            return None, None
+            last_error = e
+            print(f"yt-dlp error ({clients}): {e}")
+
+    message = str(last_error) if last_error else "Couldn't find that song"
+    if "not a bot" in message.lower() or "cookies" in message.lower():
+        message = (
+            "YouTube blocked the Railway server. Add your own cookies.txt "
+            "(or the YTDLP_COOKIES variable) and redeploy."
+        )
+    return None, None, message, {}
 
 
 async def keep_alive(vc, guild_id):
@@ -228,7 +317,7 @@ async def connect_voice(ctx):
         return existing
 
     try:
-        vc = await ctx.author.voice.channel.connect(self_deaf=False)
+        vc = await ctx.author.voice.channel.connect(self_deaf=False, timeout=30, reconnect=True)
         voice_clients[ctx.guild.id] = vc
         start_keep_alive(ctx.guild.id, vc)
         return vc
@@ -247,46 +336,150 @@ async def play_next(guild_id):
     if guild_id not in music_queues or not music_queues[guild_id]:
         return
 
-    url, title = music_queues[guild_id].pop(0)
+    item = music_queues[guild_id].pop(0)
+    if len(item) == 3:
+        url, title, headers = item
+    else:
+        url, title = item
+        headers = {}
 
     def after_playing(error):
         if error:
             print(f"Player error: {error}")
-        fut = asyncio.run_coroutine_threadsafe(play_next(guild_id), bot.loop)
-        try:
-            fut.result()
-        except Exception:
-            pass
+        asyncio.run_coroutine_threadsafe(play_next(guild_id), bot.loop)
+
+    header_lines = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://www.youtube.com/",
+    }
+    if isinstance(headers, dict):
+        header_lines.update({k: v for k, v in headers.items() if v})
+    header_blob = "".join(f"{k}: {v}\r\n" for k, v in header_lines.items())
+    ffmpeg_opts = {
+        "before_options": (
+            "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin "
+            f"-headers {json.dumps(header_blob)}"
+        ),
+        "options": "-vn",
+    }
 
     try:
-        source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
+        source = discord.FFmpegPCMAudio(url, executable="ffmpeg", **ffmpeg_opts)
         volume = guild_volumes.get(guild_id, 0.5)
         transformed = discord.PCMVolumeTransformer(source, volume=volume)
         vc.play(transformed, after=after_playing)
+        print(f"Started playback: {title}")
     except Exception as e:
         print(f"Failed to start playback for {title}: {e}")
         await play_next(guild_id)
 
 
+async def send_voice_note(channel, text):
+    api_key = os.getenv("XAI_API_KEY")
+    if not api_key or not text:
+        return
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "text": text[:15000],
+            "voice_id": "ara",
+            "language": "en",
+        }
+        session = await get_http_session()
+        async with session.post(
+            "https://api.x.ai/v1/tts",
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status == 200:
+                audio_bytes = await resp.read()
+                await channel.send(file=discord.File(io.BytesIO(audio_bytes), filename="voice.mp3"))
+            else:
+                body = await resp.text()
+                print(f"Voice note failed ({resp.status}): {body[:200]}")
+    except Exception as e:
+        print(f"Voice note failed: {e}")
+
+
+CHAT_MODEL_FALLBACKS = (
+    os.getenv("XAI_MODEL", "grok-4.6"),
+    "grok-4.6",
+    "grok-4.5",
+    "grok-4.3",
+    "grok-4",
+)
+
+
+def chat_models():
+    seen = []
+    for name in CHAT_MODEL_FALLBACKS:
+        if name and name not in seen:
+            seen.append(name)
+    return seen
+
+
+async def grok_chat(messages, max_tokens=600, temperature=0.9):
+    last_error = None
+    for model in chat_models():
+        try:
+            return await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except Exception as e:
+            last_error = e
+            print(f"LLM error with model {model}: {e}")
+    raise last_error or RuntimeError("No Grok model available")
+
 
 async def get_accurate_grok_answer(question: str):
-    try:
-        response = await client.chat.completions.create(
-            model=os.getenv("XAI_MODEL", "grok-4.6"),
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant. Answer accurately and concisely in one sentence using your up to date knowledge.",
-                },
-                {"role": "user", "content": question},
-            ],
-            max_tokens=200,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Grok answer error: {e}")
-        return "Couldn't get info right now."
+    last_error = None
+    for model in chat_models():
+        try:
+            response = await client.responses.create(
+                model=model,
+                input=question,
+                tools=[{"type": "web_search"}],
+            )
+            text = getattr(response, "output_text", None)
+            if text:
+                return text.strip()
+        except Exception as e:
+            last_error = e
+            print(f"Responses/search error ({model}): {e}")
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Answer with one short line only. "
+                            "Always name a specific title and artist. "
+                            "Never say you lack live access or tell the user to check Billboard. "
+                            "If unsure, give your best current well-known chart pick."
+                        ),
+                    },
+                    {"role": "user", "content": question},
+                ],
+                max_tokens=120,
+                temperature=0.2,
+                extra_body={"search_parameters": {"mode": "on"}},
+            )
+            content = response.choices[0].message.content
+            if content:
+                return content.strip()
+        except Exception as e:
+            last_error = e
+            print(f"Chat/search error ({model}): {e}")
+    print(f"Grok answer error: {last_error}")
+    return "Couldn't get info right now."
 
 
 @bot.event
@@ -332,9 +525,11 @@ async def on_message(message):
 
     async with message.channel.typing():
         try:
-            response = await client.chat.completions.create(
-                model=os.getenv("XAI_MODEL", "grok-4.6"),
-                messages=[
+            if not os.getenv("XAI_API_KEY"):
+                await message.reply("My xAI key isn't set on Railway (`XAI_API_KEY`), so I can't think right now.")
+                return
+            response = await grok_chat(
+                [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
                         "role": "user",
@@ -358,7 +553,15 @@ async def on_message(message):
                 asyncio.create_task(send_voice_note(message.channel, reply))
         except Exception as e:
             print(f"LLM error: {e}")
-            await message.reply("Sorry... the stars are a bit cloudy today.")
+            err = str(e)
+            hint = "check XAI_API_KEY and that it has credits"
+            if "401" in err or "Unauthorized" in err or "invalid_api_key" in err.lower():
+                hint = "XAI_API_KEY is missing or invalid"
+            elif "404" in err or "model" in err.lower():
+                hint = "model name not found — set XAI_MODEL=grok-4.6"
+            elif "429" in err:
+                hint = "rate limited or out of credits"
+            await message.reply(f"Sorry... the stars are a bit cloudy today. ({hint})")
 
 
 @bot.command(name="memory")
@@ -421,17 +624,18 @@ async def play(ctx, *, query: str = None):
         return
 
     await ctx.send(f"🔍 Searching for `{query}`...")
-    url, title = await asyncio.to_thread(search_youtube, query)
+    url, title, error, headers = await asyncio.to_thread(search_youtube, query)
     if not url:
-        await ctx.send("Couldn't find that song, sorry~ 😢")
+        await ctx.send(error or "Couldn't find that song, sorry~ 😢")
         return
 
     music_queues.setdefault(ctx.guild.id, [])
+    track = (url, title, headers)
     if vc.is_playing() or vc.is_paused():
-        music_queues[ctx.guild.id].append((url, title))
+        music_queues[ctx.guild.id].append(track)
         await ctx.send(f"➕ Added to queue: **{title}**")
     else:
-        music_queues[ctx.guild.id].insert(0, (url, title))
+        music_queues[ctx.guild.id].insert(0, track)
         await play_next(ctx.guild.id)
         await ctx.send(f"🎵 Now playing: **{title}**")
 
@@ -529,7 +733,9 @@ async def song_command(ctx, *, country: str = None):
     if not country:
         await ctx.send("Tell me which country!")
         return
-    answer = await get_accurate_grok_answer(f"What is the most popular song right now in {country}?")
+    answer = await get_accurate_grok_answer(
+        f"What is the current number one or most played pop song in {country}? Reply exactly like: Song Title — Artist"
+    )
     await ctx.send(f"**🎵 Top song in {country}:** {answer}")
 
 
@@ -538,7 +744,9 @@ async def singer_command(ctx, *, country: str = None):
     if not country:
         await ctx.send("Tell me which country!")
         return
-    answer = await get_accurate_grok_answer(f"Who is the most popular singer right now in {country}?")
+    answer = await get_accurate_grok_answer(
+        f"Who is the most popular singer or artist right now in {country}? Reply exactly like: Artist Name"
+    )
     await ctx.send(f"**🎤 Top singer in {country}:** {answer}")
 
 
@@ -581,10 +789,20 @@ async def close_resources():
         await _http_session.close()
 
 
+def clean_token(raw):
+    if not raw:
+        return raw
+    token = raw.strip().strip('"').strip("'")
+    if token.lower().startswith("bot "):
+        token = token[4:].strip()
+    return token
+
+
 def main():
-    token = os.getenv("DISCORD_TOKEN")
+    token = clean_token(os.getenv("DISCORD_TOKEN") or os.getenv("BOT_TOKEN"))
     if not token:
         raise SystemExit("DISCORD_TOKEN is not set")
+    print(f"Discord token loaded ({len(token)} chars). Not printing the token.")
     if not os.getenv("XAI_API_KEY"):
         print("Warning: XAI_API_KEY is not set — chat/TTS will fail")
     try:
