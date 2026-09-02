@@ -302,7 +302,7 @@ async def send_voice_note(channel, text):
 async def get_accurate_grok_answer(question: str):
     try:
         response = await client.chat.completions.create(
-            model=os.getenv("XAI_MODEL", "grok-4"),
+            model=os.getenv("XAI_MODEL", "grok-4.6"),
             messages=[
                 {
                     "role": "system",
@@ -363,7 +363,7 @@ async def on_message(message):
     async with message.channel.typing():
         try:
             response = await client.chat.completions.create(
-                model=os.getenv("XAI_MODEL", "grok-4"),
+                model=os.getenv("XAI_MODEL", "grok-4.6"),
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
